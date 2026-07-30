@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Vector Arena — a game built on the 2D Java Game Framework</title>
+    <meta name="description" content="Vector Arena is a wave based survival shooter running on a browser port of the 2D Java Game Framework. Play it in your browser, no install required.">
+    <meta name="theme-color" content="#070b14">
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Vector Arena">
+    <meta property="og:description" content="A wave based survival shooter running on a browser port of the 2D Java Game Framework.">
+
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <a class="skip-link" href="#stage">Skip to the game</a>
+
+    <header class="masthead">
+        <div class="masthead__brand">
+            <span class="logo" aria-hidden="true"></span>
+            <div>
+                <h1>Vector Arena</h1>
+                <p>A wave survival shooter running on a browser port of the 2D Java Game Framework.</p>
+            </div>
+        </div>
+        <nav class="masthead__links">
+            <a href="#how-to-play">How to play</a>
+            <a href="#under-the-hood">Under the hood</a>
+            <a href="https://github.com/smile-plzz/Game" rel="noopener">Source</a>
+        </nav>
+    </header>
+
+    <main>
+        <section class="stage" id="stage">
+            <div class="stage__frame">
+                <canvas id="game" aria-label="Vector Arena game canvas" role="img"></canvas>
+
+                <div class="overlay" data-overlay="menu" hidden>
+                    <div class="panel">
+                        <p class="panel__eyebrow">Wave survival</p>
+                        <h2>Vector Arena</h2>
+                        <p class="panel__lead">
+                            Clear waves of geometry. Dash through the gaps. Keep the combo alive.
+                        </p>
+                        <button class="button button--primary" data-action="start">Play</button>
+                        <dl class="panel__stats">
+                            <div><dt>Best</dt><dd data-field="highscore">0</dd></div>
+                            <div><dt>Controls</dt><dd class="panel__hint">WASD &middot; Mouse &middot; Shift</dd></div>
+                        </dl>
+                    </div>
+                </div>
+
+                <div class="overlay" data-overlay="paused" hidden>
+                    <div class="panel">
+                        <p class="panel__eyebrow">Paused</p>
+                        <h2 data-field="pause-score">0</h2>
+                        <p class="panel__lead">Take your time.</p>
+                        <div class="panel__actions">
+                            <button class="button button--primary" data-action="resume">Resume</button>
+                            <button class="button" data-action="restart">Restart</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overlay" data-overlay="gameover" hidden>
+                    <div class="panel">
+                        <p class="panel__eyebrow" data-field="result-label">Game over</p>
+                        <h2 data-field="final-score">0</h2>
+                        <p class="panel__lead">
+                            Reached wave <span data-field="final-wave">1</span>.
+                            Best <span data-field="final-best">0</span>.
+                        </p>
+                        <button class="button button--primary" data-action="restart">Play again</button>
+                    </div>
+                </div>
+
+                <div class="stage__controls">
+                    <button class="icon-button" data-action="mute" aria-pressed="false" title="Mute (M)">
+                        <span data-field="mute-label">Sound on</span>
+                    </button>
+                    <button class="icon-button" data-action="fullscreen" title="Fullscreen">
+                        Fullscreen
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" id="how-to-play">
+            <h2>How to play</h2>
+            <div class="cards">
+                <article class="card">
+                    <h3>Desktop</h3>
+                    <ul class="keys">
+                        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows — move</li>
+                        <li><span class="key-word">Mouse</span> — aim</li>
+                        <li><span class="key-word">Left click</span> or <kbd>Space</kbd> — fire</li>
+                        <li><kbd>Shift</kbd> — dash (brief invulnerability)</li>
+                        <li><kbd>P</kbd> or <kbd>Esc</kbd> — pause &middot; <kbd>M</kbd> — mute</li>
+                    </ul>
+                </article>
+                <article class="card">
+                    <h3>Touch</h3>
+                    <ul class="keys">
+                        <li>Left half of the screen — floating move stick</li>
+                        <li>Right half — aim stick, fires while held</li>
+                        <li>Double tap the left half — dash</li>
+                        <li>Landscape orientation gives you the most arena</li>
+                    </ul>
+                </article>
+                <article class="card">
+                    <h3>Scoring</h3>
+                    <ul class="keys">
+                        <li>Kills within 2.6s of each other build a combo</li>
+                        <li>Every 4 combo raises the multiplier, up to <span class="key-word">x10</span></li>
+                        <li>Taking a hit resets the multiplier to <span class="key-word">x1</span></li>
+                        <li>Drops: rapid, triple, scatter, shield, extra life</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+
+        <section class="section" id="under-the-hood">
+            <h2>Under the hood</h2>
+            <p class="section__lead">
+                This repository is a 2D game framework written in Java — a game loop, vector and
+                rectangle math, input polling, and Robert Penner's easing equations. Java no longer
+                runs in browsers, so the framework's core was ported to ES modules and the game is
+                written against that port. The classes keep their original names and signatures.
+            </p>
+
+            <div class="table-scroll">
+                <table class="mapping">
+                    <caption>Java class to browser module</caption>
+                    <thead>
+                        <tr><th scope="col">Java</th><th scope="col">Browser</th><th scope="col">Notes</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>game.framework.Game</code></td>
+                            <td><code>framework/game.js</code></td>
+                            <td>Same initialize / loadContent / update / draw hooks; requestAnimationFrame replaces the BufferStrategy loop.</td>
+                        </tr>
+                        <tr>
+                            <td><code>game.framework.GameTime</code></td>
+                            <td><code>framework/gametime.js</code></td>
+                            <td>tick, start, stop and getDeltaTimeSeconds, fed by the frame timestamp.</td>
+                        </tr>
+                        <tr>
+                            <td><code>game.framework.Vector2</code></td>
+                            <td><code>framework/vector2.js</code></td>
+                            <td>Immutable operations, plus in-place variants for the hot path.</td>
+                        </tr>
+                        <tr>
+                            <td><code>game.framework.MathHelper</code></td>
+                            <td><code>framework/mathhelper.js</code></td>
+                            <td>clamp, lerp, smoothStep, random, with frame rate independent damping added.</td>
+                        </tr>
+                        <tr>
+                            <td><code>game.input.Keyboard</code> / <code>Mouse</code></td>
+                            <td><code>framework/input.js</code></td>
+                            <td>keyDown and keyDownOnce polling against DOM events.</td>
+                        </tr>
+                        <tr>
+                            <td><code>game.animation.ease.*</code></td>
+                            <td><code>framework/ease.js</code></td>
+                            <td>All eleven easing families with the original (time, begin, change, duration) signature.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 class="curves__title">Easing curves, straight from the port</h3>
+            <p class="section__lead">
+                The wave banner, combo pop and enemy sway are all driven by these. Each canvas plots
+                the ported function over a single second.
+            </p>
+            <div class="curves" id="curves"></div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>
+            Built on <a href="https://github.com/smile-plzz/Game" rel="noopener">smile-plzz/Game</a>.
+            Easing equations adapted from Robert Penner's originals.
+        </p>
+    </footer>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
