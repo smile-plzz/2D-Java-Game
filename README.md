@@ -1,5 +1,7 @@
 # 2D Java Game Framework
 
+[github.com/smile-plzz/Game](https://github.com/smile-plzz/Game)
+
 A collection of classes used for 2d game programming in Java. Much of the dirty work is taken care which makes this useful for beginner game programmers.
 
 ## Play it in the browser
@@ -11,7 +13,8 @@ no build step, no dependencies, no server code.
 Run it locally with any static file server:
 
 ```sh
-cd web
+git clone https://github.com/smile-plzz/Game.git
+cd Game/web
 python3 -m http.server 8000   # then open http://localhost:8000
 ```
 
@@ -23,8 +26,8 @@ refuse to load over that scheme.
 `vercel.json` at the repository root already points Vercel at `web/`, so the
 import is zero configuration:
 
-1. Push this repository to GitHub.
-2. On [vercel.com](https://vercel.com), **Add New → Project** and import the repo.
+1. Push this repository to GitHub (`smile-plzz/Game`, or your own fork of it).
+2. On [vercel.com](https://vercel.com), **Add New → Project** and import that repo.
 3. Leave every build setting empty — framework preset **Other**, no build
    command, no install command. `vercel.json` supplies the output directory.
 4. **Deploy.**
@@ -78,7 +81,7 @@ game needed.
 ## Installation (Java framework)
 
 1. install the java JDK7.
-2. clone this repo.
+2. clone this repo: `git clone https://github.com/smile-plzz/Game.git`
 3. run make.bat if on windows, make.sh if on linux, or compile it with netbeans.
 4. add the .jar file created to your project.
 
