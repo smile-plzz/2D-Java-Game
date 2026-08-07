@@ -1,4 +1,4 @@
-import { Arena, State, drawEasingPreview } from "./game/arena.js";
+import { Arena, State, MODE_INFO, drawEasingPreview } from "./game/arena.js";
 import {
     Back, Bounce, Circular, Cubic, Elastic, Exponential, Quadratic, Sinusoidal
 } from "./framework/ease.js";
@@ -35,7 +35,16 @@ arena.onStateChange((state, data) => {
 
     if (state === State.GAME_OVER && fields["result-label"]) {
         const isRecord = data.score > 0 && data.score >= data.highScore;
-        fields["result-label"].textContent = isRecord ? "New best" : "Game over";
+        fields["result-label"].textContent = data.timedOut
+            ? "Time's up"
+            : isRecord ? "New best" : "Game over";
+    }
+
+    const info = MODE_INFO[data.mode];
+    if (fields["mode-eyebrow"] && info) fields["mode-eyebrow"].textContent = info.label;
+    if (fields["mode-tagline"] && info) fields["mode-tagline"].textContent = info.tagline;
+    for (const pill of document.querySelectorAll(".mode-pill")) {
+        pill.setAttribute("aria-pressed", String(pill.dataset.mode === data.mode));
     }
 
     const muteButton = document.querySelector('[data-action="mute"]');
@@ -64,6 +73,13 @@ const actions = {
 };
 
 document.addEventListener("click", (event) => {
+    const modePill = event.target.closest(".mode-pill");
+    if (modePill) {
+        arena.setMode(modePill.dataset.mode);
+        modePill.blur();
+        return;
+    }
+
     const trigger = event.target.closest("[data-action]");
     if (!trigger) return;
     const action = actions[trigger.dataset.action];
@@ -79,7 +95,7 @@ for (const name of [State.MENU, State.GAME_OVER]) {
     const overlay = overlays.get(name);
     if (!overlay) continue;
     overlay.addEventListener("pointerdown", (event) => {
-        if (event.target.closest("[data-action]")) return;
+        if (event.target.closest("[data-action], .mode-pill")) return;
         arena.startGame();
     });
 }

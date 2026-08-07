@@ -39,11 +39,16 @@
 
                 <div class="overlay" data-overlay="menu" hidden>
                     <div class="panel">
-                        <p class="panel__eyebrow">Wave survival</p>
+                        <p class="panel__eyebrow" data-field="mode-eyebrow">Wave survival</p>
                         <h2>Vector Arena</h2>
-                        <p class="panel__lead">
+                        <p class="panel__lead" data-field="mode-tagline">
                             Clear waves of geometry. Dash through the gaps. Keep the combo alive.
                         </p>
+                        <div class="mode-select" role="group" aria-label="Game mode">
+                            <button class="mode-pill" data-mode="survival" aria-pressed="true">Survival</button>
+                            <button class="mode-pill" data-mode="time_attack" aria-pressed="false">Time Attack</button>
+                            <button class="mode-pill" data-mode="zen" aria-pressed="false">Zen</button>
+                        </div>
                         <button class="button button--primary" data-action="start">Play</button>
                         <dl class="panel__stats">
                             <div><dt>Best</dt><dd data-field="highscore">0</dd></div>

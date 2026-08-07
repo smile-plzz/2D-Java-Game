@@ -17,7 +17,38 @@ export const State = {
     GAME_OVER: "gameover"
 };
 
-const HIGH_SCORE_KEY = "vector-arena.highscore";
+export const Mode = {
+    SURVIVAL: "survival",
+    TIME_ATTACK: "time_attack",
+    ZEN: "zen"
+};
+
+/** Menu copy and per-mode tuning, kept together so a new mode is one entry. */
+export const MODE_INFO = {
+    [Mode.SURVIVAL]: {
+        label: "Survival",
+        tagline: "Clear waves of geometry. Dash through the gaps. Keep the combo alive.",
+        timeLimit: Infinity,
+        spawnScale: 1,
+        intermissionScale: 1
+    },
+    [Mode.TIME_ATTACK]: {
+        label: "Time Attack",
+        tagline: "90 seconds on the clock. Waves come in fast — bank as much score as you can.",
+        timeLimit: 90,
+        spawnScale: 1.35,
+        intermissionScale: 0.55
+    },
+    [Mode.ZEN]: {
+        label: "Zen",
+        tagline: "No lives to lose. Hits knock you back instead of costing a life — just play.",
+        timeLimit: Infinity,
+        spawnScale: 0.85,
+        intermissionScale: 1
+    }
+};
+
+const HIGH_SCORE_PREFIX = "vector-arena.highscore.";
 const COMBO_WINDOW = 2.6;
 const INTERMISSION = 2.4;
 
@@ -41,12 +72,17 @@ export class Arena extends Game {
         this.state = State.MENU;
         this.listeners = new Set();
 
+        this.mode = Mode.SURVIVAL;
+        this.highScores = {};
+        for (const mode of Object.keys(MODE_INFO)) this.highScores[mode] = Arena.loadHighScore(mode);
+
         this.score = 0;
-        this.highScore = Arena.loadHighScore();
         this.wave = 0;
         this.combo = 0;
         this.comboTimer = 0;
         this.multiplier = 1;
+        this.modeTimeLeft = Infinity;
+        this.timedOut = false;
 
         this.spawnQueue = [];
         this.spawnTimer = 0;
@@ -84,7 +120,20 @@ export class Arena extends Game {
     }
     //</editor-fold>
 
+    get highScore() { return this.highScores[this.mode]; }
+
     //<editor-fold desc="State">
+    /**
+     * Chooses the mode a new game will start in. Only takes effect from the
+     * menu; a run in progress keeps the mode it started with.
+     */
+    setMode(mode) {
+        if (!MODE_INFO[mode] || this.state === State.PLAYING || this.state === State.PAUSED) return;
+        if (this.mode === mode) return;
+        this.mode = mode;
+        this.emit();
+    }
+
     /** Registers a listener notified whenever the game state changes. */
     onStateChange(listener) {
         this.listeners.add(listener);
@@ -100,6 +149,10 @@ export class Arena extends Game {
         return {
             score: this.score,
             highScore: this.highScore,
+            highScores: this.highScores,
+            mode: this.mode,
+            modeTimeLeft: this.modeTimeLeft,
+            timedOut: this.timedOut,
             wave: this.wave,
             lives: this.player ? this.player.lives : 0,
             muted: this.audio.muted
@@ -112,7 +165,8 @@ export class Arena extends Game {
         this.emit();
     }
 
-    startGame() {
+    startGame(mode = this.mode) {
+        this.mode = MODE_INFO[mode] ? mode : Mode.SURVIVAL;
         this.player = new Player(this.width / 2, this.height / 2);
         this.enemies.length = 0;
         this.bullets.length = 0;
@@ -130,6 +184,8 @@ export class Arena extends Game {
         this.shakeAmount = 0;
         this.hitFlash = 0;
         this.pointerAimed = false;
+        this.modeTimeLeft = MODE_INFO[this.mode].timeLimit;
+        this.timedOut = false;
 
         this.audio.ensureContext();
         this.setState(State.PLAYING);
@@ -155,26 +211,26 @@ export class Arena extends Game {
 
     gameOver() {
         this.bannerText = "";
-        if (this.score > this.highScore) {
-            this.highScore = this.score;
-            Arena.saveHighScore(this.highScore);
+        if (this.score > this.highScores[this.mode]) {
+            this.highScores[this.mode] = this.score;
+            Arena.saveHighScore(this.mode, this.score);
         }
         this.playSound("over");
         this.setState(State.GAME_OVER);
     }
 
-    static loadHighScore() {
+    static loadHighScore(mode) {
         try {
-            return Number(window.localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+            return Number(window.localStorage.getItem(HIGH_SCORE_PREFIX + mode)) || 0;
         } catch (error) {
             // Private browsing modes can throw on storage access.
             return 0;
         }
     }
 
-    static saveHighScore(value) {
+    static saveHighScore(mode, value) {
         try {
-            window.localStorage.setItem(HIGH_SCORE_KEY, String(value));
+            window.localStorage.setItem(HIGH_SCORE_PREFIX + mode, String(value));
         } catch (error) {
             // Losing the high score is not worth breaking the run over.
         }
@@ -230,7 +286,7 @@ export class Arena extends Game {
     startWave() {
         this.wave += 1;
         const tier = this.wave;
-        let budget = 4 + Math.floor(tier * 2.2);
+        let budget = Math.round((4 + tier * 2.2) * MODE_INFO[this.mode].spawnScale);
 
         const catalogue = [
             { type: Seeker, cost: 1, from: 1 },
@@ -303,7 +359,7 @@ export class Arena extends Game {
         }
 
         if (this.enemies.length === 0) {
-            this.intermission = INTERMISSION;
+            this.intermission = INTERMISSION * MODE_INFO[this.mode].intermissionScale;
             this.showBanner(`WAVE ${this.wave} CLEAR`);
         }
     }
@@ -390,6 +446,15 @@ export class Arena extends Game {
                 this.spawnAmbientDrift();
             this.particles.update(delta);
             return;
+        }
+
+        if (this.mode === Mode.TIME_ATTACK && Number.isFinite(this.modeTimeLeft)) {
+            this.modeTimeLeft = Math.max(0, this.modeTimeLeft - delta);
+            if (this.modeTimeLeft <= 0) {
+                this.timedOut = true;
+                this.gameOver();
+                return;
+            }
         }
 
         this.updateWaves(delta);
@@ -499,6 +564,21 @@ export class Arena extends Game {
 
     /** @returns true when the player was actually hurt */
     damagePlayer() {
+        if (this.mode === Mode.ZEN) {
+            // Zen never costs a life: hits just knock the combo down and
+            // grant a short breather, like a shield that never runs out.
+            if (this.player.invulnerable > 0 || this.player.dashTimer > 0) return false;
+            this.player.invulnerable = 1;
+            this.particles.burst(this.player.position, Palette.shield, 30, 300, 0.6, 2.2);
+            this.shake(10);
+            this.playSound("shield");
+            this.combo = 0;
+            this.multiplier = 1;
+            this.hitFlash = 0.6;
+            this.emit();
+            return false;
+        }
+
         const hurt = this.player.takeHit(this);
         if (hurt) {
             this.combo = 0;
@@ -621,15 +701,21 @@ export class Arena extends Game {
         ctx.textAlign = "right";
         ctx.font = "700 15px 'JetBrains Mono', ui-monospace, monospace";
         ctx.fillStyle = "#e2e8f0";
-        ctx.fillText(`WAVE ${Math.max(this.wave, 1)}`, this.width - pad, pad);
+        if (this.mode === Mode.TIME_ATTACK) {
+            const seconds = Math.ceil(this.modeTimeLeft);
+            ctx.fillStyle = seconds <= 10 ? Palette.seeker : "#e2e8f0";
+            ctx.fillText(`TIME ${seconds}s`, this.width - pad, pad);
+        } else {
+            ctx.fillText(`WAVE ${Math.max(this.wave, 1)}`, this.width - pad, pad);
+        }
 
         ctx.font = "500 12px 'JetBrains Mono', ui-monospace, monospace";
         ctx.fillStyle = "#94a3b8";
         ctx.fillText(`ENEMIES ${this.enemies.length + this.spawnQueue.length}`,
             this.width - pad, pad + 22);
 
-        // Lives, drawn as small copies of the ship.
-        if (this.player) {
+        // Lives, drawn as small copies of the ship. Zen has none to lose.
+        if (this.player && this.mode !== Mode.ZEN) {
             for (let i = 0; i < this.player.lives; i++) {
                 const x = pad + 9 + i * 22;
                 const y = this.height - pad - 8;

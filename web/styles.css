@@ -214,6 +214,34 @@ a { color: var(--accent-2); }
     flex-wrap: wrap;
 }
 
+.mode-select {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 1.1rem;
+}
+
+.mode-pill {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    background: rgba(148, 163, 184, 0.07);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.4rem 0.9rem;
+    cursor: pointer;
+    transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.mode-pill:hover { transform: translateY(-1px); border-color: var(--accent); }
+.mode-pill[aria-pressed="true"] {
+    color: #eafff2;
+    background: linear-gradient(180deg, rgba(74, 222, 128, 0.22), rgba(74, 222, 128, 0.08));
+    border-color: rgba(74, 222, 128, 0.5);
+}
+
 .button {
     font-family: var(--mono);
     font-size: 0.85rem;
