@@ -330,6 +330,8 @@ a { color: var(--accent-2); }
 .game-card--pink { --glow: #f0abfc; }
 .game-card--blue { --glow: #38bdf8; }
 .game-card--red { --glow: #f43f5e; }
+.game-card--amber { --glow: #fbbf24; }
+.game-card--violet { --glow: #a78bfa; }
 
 .game-card::before {
     content: "";

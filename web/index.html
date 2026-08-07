@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>2D Java Game Arcade — built on the 2D Java Game Framework</title>
-    <meta name="description" content="A small arcade of browser games built on a JavaScript port of the 2D Java Game Framework: a wave shooter, snake, brick breaker and pong. No install required.">
+    <meta name="description" content="A small arcade of browser games built on a JavaScript port of the 2D Java Game Framework: a wave shooter, snake, brick breaker, pong, 2048 and connect four. No install required.">
     <meta name="theme-color" content="#070b14">
 
     <meta property="og:type" content="website">
@@ -22,7 +22,7 @@
             <span class="logo" aria-hidden="true"></span>
             <div>
                 <h1>2D Java Game Arcade</h1>
-                <p>Four small games sharing one browser port of the 2D Java Game Framework.</p>
+                <p>Six small games sharing one browser port of the 2D Java Game Framework.</p>
             </div>
         </div>
         <nav class="masthead__links">
@@ -70,6 +70,24 @@
                     </p>
                     <span class="game-card__play">Play &rarr;</span>
                 </a>
+
+                <a class="game-card game-card--amber" href="neon-2048/">
+                    <p class="game-card__eyebrow">Sliding puzzle</p>
+                    <h2>Neon 2048</h2>
+                    <p class="game-card__lead">
+                        Slide, merge, reach 2048. Every move drops in a new tile.
+                    </p>
+                    <span class="game-card__play">Play &rarr;</span>
+                </a>
+
+                <a class="game-card game-card--violet" href="connect-four/">
+                    <p class="game-card__eyebrow">Strategy</p>
+                    <h2>Connect Four</h2>
+                    <p class="game-card__lead">
+                        Four in a row wins it, against a minimax AI that looks five moves ahead.
+                    </p>
+                    <span class="game-card__play">Play &rarr;</span>
+                </a>
             </div>
         </section>
 
@@ -99,7 +117,7 @@
                         </tr>
                         <tr>
                             <td><code>framework/input.js</code></td>
-                            <td>Keyboard and mouse polling shared across all four games.</td>
+                            <td>Keyboard and mouse polling shared across all six games.</td>
                         </tr>
                         <tr>
                             <td><code>game/particles.js</code>, <code>game/audio.js</code></td>
