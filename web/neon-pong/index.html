@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Neon Pong — a game built on the 2D Java Game Framework</title>
+    <meta name="description" content="Neon Pong is a player-versus-AI paddle game running on a browser port of the 2D Java Game Framework. Play it in your browser, no install required.">
+    <meta name="theme-color" content="#070b14">
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Neon Pong">
+    <meta property="og:description" content="A player-versus-AI paddle game running on a browser port of the 2D Java Game Framework.">
+
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+    <a class="skip-link" href="#stage">Skip to the game</a>
+
+    <header class="masthead">
+        <div class="masthead__brand">
+            <span class="logo" aria-hidden="true"></span>
+            <div>
+                <h1>Neon Pong</h1>
+                <p>Player versus AI, first to seven, on a browser port of the 2D Java Game Framework.</p>
+            </div>
+        </div>
+        <nav class="masthead__links">
+            <a href="../">All games</a>
+            <a href="#how-to-play">How to play</a>
+            <a href="https://github.com/smile-plzz/2D-Java-Game" rel="noopener">Source</a>
+        </nav>
+    </header>
+
+    <main>
+        <section class="stage" id="stage">
+            <div class="stage__frame">
+                <canvas id="game" aria-label="Neon Pong game canvas" role="img"></canvas>
+
+                <div class="overlay" data-overlay="menu" hidden>
+                    <div class="panel">
+                        <p class="panel__eyebrow">Head to head</p>
+                        <h2>Neon Pong</h2>
+                        <p class="panel__lead">
+                            You against the machine. First to seven takes it.
+                        </p>
+                        <button class="button button--primary" data-action="start">Play</button>
+                        <dl class="panel__stats">
+                            <div><dt>Best</dt><dd data-field="highscore">0</dd></div>
+                            <div><dt>Controls</dt><dd class="panel__hint">Mouse &middot; W/S &middot; Arrows</dd></div>
+                        </dl>
+                    </div>
+                </div>
+
+                <div class="overlay" data-overlay="paused" hidden>
+                    <div class="panel">
+                        <p class="panel__eyebrow">Paused</p>
+                        <h2 data-field="pause-score">0</h2>
+                        <p class="panel__lead">Take your time.</p>
+                        <div class="panel__actions">
+                            <button class="button button--primary" data-action="resume">Resume</button>
+                            <button class="button" data-action="restart">Restart</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overlay" data-overlay="gameover" hidden>
+                    <div class="panel">
+                        <p class="panel__eyebrow" data-field="result-label">Game over</p>
+                        <h2 data-field="final-score">0</h2>
+                        <p class="panel__lead">
+                            Final score <span data-field="final-score-2">0</span> &ndash; <span data-field="final-opponent">0</span>.
+                            Best <span data-field="final-best">0</span>.
+                        </p>
+                        <button class="button button--primary" data-action="restart">Play again</button>
+                    </div>
+                </div>
+
+                <div class="stage__controls">
+                    <button class="icon-button" data-action="mute" aria-pressed="false" title="Mute (M)">
+                        <span data-field="mute-label">Sound on</span>
+                    </button>
+                    <button class="icon-button" data-action="fullscreen" title="Fullscreen">
+                        Fullscreen
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" id="how-to-play">
+            <h2>How to play</h2>
+            <div class="cards">
+                <article class="card">
+                    <h3>Desktop</h3>
+                    <ul class="keys">
+                        <li><span class="key-word">Mouse</span> — move your paddle (left side)</li>
+                        <li><kbd>W</kbd><kbd>S</kbd> or arrows — move your paddle</li>
+                        <li><kbd>P</kbd> or <kbd>Esc</kbd> — pause &middot; <kbd>M</kbd> — mute</li>
+                    </ul>
+                </article>
+                <article class="card">
+                    <h3>Touch</h3>
+                    <ul class="keys">
+                        <li>Drag anywhere to move your paddle</li>
+                        <li>Tap to start or restart from the menu</li>
+                    </ul>
+                </article>
+                <article class="card">
+                    <h3>Scoring</h3>
+                    <ul class="keys">
+                        <li>First to <span class="key-word">7</span> points wins the match</li>
+                        <li>Where the ball meets your paddle steers the return angle</li>
+                        <li>Rallies speed up the ball slightly with every hit</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>
+            Built on <a href="https://github.com/smile-plzz/2D-Java-Game" rel="noopener">smile-plzz/2D-Java-Game</a>.
+        </p>
+    </footer>
+
+    <script type="module" src="../js/games/pong-main.js"></script>
+</body>
+</html>

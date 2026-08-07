@@ -11,7 +11,12 @@ const VOICES = {
     shield: { type: "sine", from: 180, to: 640, duration: 0.28, gain: 0.13 },
     pickup: { type: "sine", from: 520, to: 1180, duration: 0.22, gain: 0.12 },
     wave: { type: "triangle", from: 300, to: 780, duration: 0.4, gain: 0.11 },
-    over: { type: "sawtooth", from: 400, to: 40, duration: 1.1, gain: 0.18 }
+    over: { type: "sawtooth", from: 400, to: 40, duration: 1.1, gain: 0.18 },
+    eat: { type: "sine", from: 440, to: 880, duration: 0.12, gain: 0.11 },
+    crash: { type: "sawtooth", from: 320, to: 30, duration: 0.5, gain: 0.17 },
+    launch: { type: "square", from: 260, to: 560, duration: 0.14, gain: 0.09 },
+    paddle: { type: "square", from: 200, to: 340, duration: 0.07, gain: 0.08 },
+    brick: { type: "triangle", from: 500, to: 180, duration: 0.14, gain: 0.1 }
 };
 
 export class AudioBank {
