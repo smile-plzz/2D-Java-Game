@@ -4,9 +4,23 @@ A collection of classes used for 2d game programming in Java. Much of the dirty 
 
 ## Play it in the browser
 
-`web/` holds **Vector Arena**, a wave based survival shooter, plus a browser port
-of this framework's core that the game is written against. It is a static site —
-no build step, no dependencies, no server code.
+`web/` holds a small arcade of six games, plus a browser port of this framework's
+core that they are all written against. It is a static site — no build step, no
+dependencies, no server code.
+
+| Game | Modes |
+| --- | --- |
+| **Vector Arena** — wave survival shooter | Survival · Time Attack · Zen |
+| **Neon Snake** — grid arcade | Classic · Wrap · Maze |
+| **Brick Breaker** — paddle arcade | Classic · Blitz · Endless |
+| **Neon Pong** — head to head | Classic · Blitz · Multiball |
+| **Neon 2048** — sliding puzzle | Compact 3×3 · Classic 4×4 · Grand 5×5 |
+| **Connect Four** — minimax AI | Casual · Standard · Expert |
+
+Each mode keeps its own high score. A mode is one entry in that game's
+`MODE_INFO` table — the tuning it changes and the menu copy describing it live
+side by side, so adding another is a single object rather than a branch through
+the update loop.
 
 Run it locally with any static file server:
 
@@ -51,6 +65,10 @@ to `web` in the project settings instead — the two approaches are equivalent.
 | Pause | `P` or `Esc` | — |
 | Mute | `M` | Sound button |
 
+The other games use the same conventions: `WASD` or the arrows to move, `P` or
+`Esc` to pause, `M` to mute, `Enter` or `R` to start and restart. Every page also
+carries a quality button that cycles auto, high, medium and low.
+
 ### What the port covers
 
 Java no longer runs in browsers, so the classes the game needed were ported to
@@ -67,9 +85,44 @@ the two versions read the same.
 | `game.input.Keyboard` / `Mouse` | `framework/input.js` | `keyDown` / `keyDownOnce` polling over DOM events |
 | `game.animation.ease.*` | `framework/ease.js` | All eleven easing families, original `(time, begin, change, duration)` signature |
 
-The game itself lives in `web/js/game/`: `arena.js` (loop, waves, HUD),
+Two modules have no Java counterpart — they exist because a browser canvas has
+problems a desktop JVM window does not:
+
+| Browser | What it does |
+| --- | --- |
+| `framework/quality.js` | Watches the frame time and steps a quality level up and down, scaling glow radius, particle counts and the device pixel ratio. Pinnable by hand with the quality button, a `?quality=` parameter, or `prefers-reduced-motion` |
+| `framework/spatialgrid.js` | Uniform grid broad phase for circle collision, rebuilt each frame with recycled buckets |
+
+Vector Arena lives in `web/js/game/`: `arena.js` (loop, waves, HUD),
 `entities.js` (player, enemies, pickups), `particles.js`, `audio.js` (synthesised
-with the Web Audio API, so there are no audio assets), and `touch.js`.
+with the Web Audio API, so there are no audio assets), and `touch.js`. The other
+five games are in `web/js/games/`, one module each plus `shell.js`, which wires
+the DOM chrome — overlays, score readouts, mode pills and buttons — that every
+page shares.
+
+### Performance
+
+The arcade is written for a phone that is already throttling as much as for a
+desktop. What that costs, and what it bought:
+
+- **Particles are typed arrays, drawn in batches.** The pool is nine flat buffers
+  rather than a thousand objects; live particles are tracked by a dense index
+  list, so a free slot is a stack pop instead of a scan. Drawing sorts them into
+  buckets sharing a colour, a quantised alpha and a quantised line width, and
+  strokes each bucket as one path. Measured in headless Chromium at a saturated
+  1000 particle pool: **6.1ms → 0.18ms per frame**, most of a frame budget back.
+- **The glow is the first thing to go.** `shadowBlur` behind every neon stroke is
+  the single most expensive thing the canvas does per shape, so it is scaled by
+  the quality level from one place and switched off entirely at the bottom.
+- **The device pixel ratio is capped.** A phone reporting 3 would shade nine
+  pixels for every one the player can tell apart; the cap is 2, 1.5 or 1 by level.
+- **Bullet against enemy goes through a spatial grid** rather than every bullet
+  against every enemy, which is what a late wave used to spend its frame on.
+- **The hot paths allocate nothing.** Steering, damping, separation and collision
+  work in plain numbers on vectors held in place; the per-frame `filter` calls
+  that rebuilt four arrays became in-place compaction; the static backdrop grid
+  is rasterised once and blitted; `getBoundingClientRect` is cached rather than
+  read on every pointer move.
 
 Not ported: `Matrix`, `Matrix3`, `Quaternion`, `Vector3`, `Vector4`, the Swing
 GUI toolkit under `game.gui`, and `Texture2D` / `ImageHelper` — none of which the

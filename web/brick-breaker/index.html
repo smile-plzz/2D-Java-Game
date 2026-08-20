@@ -39,11 +39,16 @@
 
                 <div class="overlay" data-overlay="menu" hidden>
                     <div class="panel">
-                        <p class="panel__eyebrow">Paddle arcade</p>
+                        <p class="panel__eyebrow" data-field="mode-eyebrow">Classic</p>
                         <h2>Brick Breaker</h2>
-                        <p class="panel__lead">
-                            Clear the grid, keep the ball alive. Every cleared level packs in one more row.
+                        <p class="panel__lead" data-field="mode-tagline">
+                            Clear the grid, keep the ball alive. Every level packs in one more row.
                         </p>
+                        <div class="mode-select" role="group" aria-label="Game mode">
+                            <button class="mode-pill" data-mode="classic" aria-pressed="true">Classic</button>
+                            <button class="mode-pill" data-mode="blitz" aria-pressed="false">Blitz</button>
+                            <button class="mode-pill" data-mode="endless" aria-pressed="false">Endless</button>
+                        </div>
                         <button class="button button--primary" data-action="start">Play</button>
                         <dl class="panel__stats">
                             <div><dt>Best</dt><dd data-field="highscore">0</dd></div>
@@ -80,6 +85,9 @@
                     <button class="icon-button" data-action="mute" aria-pressed="false" title="Mute (M)">
                         <span data-field="mute-label">Sound on</span>
                     </button>
+                    <button class="icon-button" data-action="quality" title="Render quality: auto, high, medium or low">
+                        <span data-field="quality-label">Quality auto</span>
+                    </button>
                     <button class="icon-button" data-action="fullscreen" title="Fullscreen">
                         Fullscreen
                     </button>
@@ -107,11 +115,12 @@
                     </ul>
                 </article>
                 <article class="card">
-                    <h3>Scoring</h3>
+                    <h3>Modes</h3>
                     <ul class="keys">
-                        <li>Top rows are worth more points than the bottom ones</li>
-                        <li>Clearing every brick advances the level and adds a row</li>
-                        <li>Losing the ball costs a life; three lives per run</li>
+                        <li><span class="key-word">Classic</span> — three lives, a row added per level</li>
+                        <li><span class="key-word">Blitz</span> — one life, narrow paddle, <span class="key-word">double</span> points</li>
+                        <li><span class="key-word">Endless</span> — the wall drops a row every <span class="key-word">9s</span></li>
+                        <li>Top rows score more than the bottom ones, in every mode</li>
                     </ul>
                 </article>
             </div>

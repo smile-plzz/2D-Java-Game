@@ -1,7 +1,8 @@
 import { Game } from "../framework/game.js";
 import { Vector2 } from "../framework/vector2.js";
 import { MathHelper } from "../framework/mathhelper.js";
-import { Keyboard, Keys } from "../framework/input.js";
+import { Keyboard, Keys, Mouse } from "../framework/input.js";
+import { Quality } from "../framework/quality.js";
 import { ParticleSystem } from "../game/particles.js";
 import { AudioBank } from "../game/audio.js";
 
@@ -12,14 +13,57 @@ export const State = {
     GAME_OVER: "gameover"
 };
 
-const HIGH_SCORE_KEY = "neon-pong.highscore";
-const WIN_SCORE = 7;
+export const Mode = {
+    CLASSIC: "classic",
+    BLITZ: "blitz",
+    MULTIBALL: "multiball"
+};
+
+/** Menu copy and per-mode tuning, kept together so a new mode is one entry. */
+export const MODE_INFO = {
+    [Mode.CLASSIC]: {
+        label: "Classic",
+        tagline: "You against a reflex-limited AI. First to seven takes it.",
+        winScore: 7,
+        balls: 1,
+        serveSpeed: 320,
+        maxSpeed: 720,
+        rallyGain: 1.04,
+        paddleHeight: 80,
+        aiSpeed: 300
+    },
+    [Mode.BLITZ]: {
+        label: "Blitz",
+        tagline: "Shorter paddles, a faster serve and an AI that keeps up. First to five.",
+        winScore: 5,
+        balls: 1,
+        serveSpeed: 430,
+        maxSpeed: 900,
+        rallyGain: 1.06,
+        paddleHeight: 58,
+        aiSpeed: 385
+    },
+    [Mode.MULTIBALL]: {
+        label: "Multiball",
+        tagline: "Three balls in play at once. Longer paddles, and a race to eleven.",
+        winScore: 11,
+        balls: 3,
+        serveSpeed: 300,
+        maxSpeed: 700,
+        rallyGain: 1.03,
+        paddleHeight: 94,
+        aiSpeed: 330
+    }
+};
+
+const HIGH_SCORE_PREFIX = "neon-pong.highscore.";
 const BALL_RADIUS = 6;
 const PADDLE_MARGIN = 26;
 
 /**
- * Neon Pong: player versus a reflex-limited AI, first to seven. Reuses the
- * same framework port and HUD conventions as the other games in the arcade.
+ * Neon Pong: player versus a reflex-limited AI. Classic, Blitz and Multiball
+ * all run through the same loop; MODE_INFO holds everything that differs.
+ * Reuses the same framework port and HUD conventions as the rest of the arcade.
  */
 export class PongGame extends Game {
     constructor(canvas) {
@@ -31,21 +75,30 @@ export class PongGame extends Game {
         this.state = State.MENU;
         this.listeners = new Set();
 
+        this.mode = Mode.CLASSIC;
+        this.highScores = {};
+        for (const mode of Object.keys(MODE_INFO)) {
+            this.highScores[mode] = PongGame.loadHighScore(mode);
+        }
+
         this.playerScore = 0;
         this.aiScore = 0;
-        this.highScore = PongGame.loadHighScore();
         this.winner = null;
 
-        this.paddleHeight = 80;
+        this.paddleHeight = MODE_INFO[this.mode].paddleHeight;
         this.paddleWidth = 12;
         this.player = { y: 0 };
         this.ai = { y: 0 };
-        this.ball = { position: new Vector2(), velocity: new Vector2() };
+        // Every mode plays out of the same list; classic simply keeps one in it.
+        this.balls = [];
         this.shakeAmount = 0;
 
         this.pointerY = null;
         canvas.addEventListener("pointermove", (event) => {
-            const rect = canvas.getBoundingClientRect();
+            // Mouse holds a cached box for this same canvas, so tracking the
+            // paddle costs no layout work per pointer event.
+            const rect = Mouse.getBounds();
+            if (!rect || !rect.height) return;
             this.pointerY = ((event.clientY - rect.top) / rect.height) * this.height;
         });
         canvas.addEventListener("pointerdown", () => {
@@ -68,7 +121,23 @@ export class PongGame extends Game {
     }
     //</editor-fold>
 
+    get highScore() { return this.highScores[this.mode]; }
+
+    /** Tuning for the mode currently selected. */
+    get rules() { return MODE_INFO[this.mode]; }
+
     //<editor-fold desc="State">
+    /**
+     * Chooses the mode the next match starts in. Only takes effect outside a
+     * match; one in progress keeps the mode it started with.
+     */
+    setMode(mode) {
+        if (!MODE_INFO[mode] || this.mode === mode) return;
+        if (this.state === State.PLAYING || this.state === State.PAUSED) return;
+        this.mode = mode;
+        this.emit();
+    }
+
     onStateChange(listener) {
         this.listeners.add(listener);
         listener(this.state, this.snapshot());
@@ -84,6 +153,9 @@ export class PongGame extends Game {
             score: this.playerScore,
             opponentScore: this.aiScore,
             highScore: this.highScore,
+            highScores: this.highScores,
+            mode: this.mode,
+            target: this.rules.winScore,
             winner: this.winner,
             muted: this.audio.muted
         };
@@ -95,15 +167,23 @@ export class PongGame extends Game {
         this.emit();
     }
 
-    startGame() {
+    startGame(mode = this.mode) {
+        this.mode = MODE_INFO[mode] ? mode : Mode.CLASSIC;
         this.playerScore = 0;
         this.aiScore = 0;
         this.winner = null;
+        this.paddleHeight = this.rules.paddleHeight;
         this.player.y = (this.height - this.paddleHeight) / 2;
         this.ai.y = (this.height - this.paddleHeight) / 2;
         this.particles.clear();
         this.shakeAmount = 0;
-        this.resetBall(Math.random() < 0.5 ? 1 : -1);
+
+        this.balls.length = 0;
+        for (let i = 0; i < this.rules.balls; i++) {
+            // Fan the serves out so a multiball opening does not stack three
+            // balls on the same line.
+            this.balls.push(this.serve(Math.random() < 0.5 ? 1 : -1, i / this.rules.balls));
+        }
 
         this.audio.ensureContext();
         this.setState(State.PLAYING);
@@ -129,25 +209,25 @@ export class PongGame extends Game {
 
     gameOver() {
         this.winner = this.playerScore > this.aiScore ? "player" : "ai";
-        if (this.playerScore > this.highScore) {
-            this.highScore = this.playerScore;
-            PongGame.saveHighScore(this.highScore);
+        if (this.playerScore > this.highScores[this.mode]) {
+            this.highScores[this.mode] = this.playerScore;
+            PongGame.saveHighScore(this.mode, this.playerScore);
         }
         this.audio.play(this.winner === "player" ? "wave" : "crash");
         this.setState(State.GAME_OVER);
     }
 
-    static loadHighScore() {
+    static loadHighScore(mode) {
         try {
-            return Number(window.localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+            return Number(window.localStorage.getItem(HIGH_SCORE_PREFIX + mode)) || 0;
         } catch (error) {
             return 0;
         }
     }
 
-    static saveHighScore(value) {
+    static saveHighScore(mode, value) {
         try {
-            window.localStorage.setItem(HIGH_SCORE_KEY, String(value));
+            window.localStorage.setItem(HIGH_SCORE_PREFIX + mode, String(value));
         } catch (error) {
             // Losing the high score is not worth breaking the run over.
         }
@@ -155,23 +235,41 @@ export class PongGame extends Game {
     //</editor-fold>
 
     //<editor-fold desc="Ball and scoring">
-    resetBall(direction) {
-        this.ball.position = new Vector2(this.width / 2, this.height / 2);
-        const angle = MathHelper.random(-0.35, 0.35) + (direction < 0 ? Math.PI : 0);
-        this.ball.velocity = Vector2.fromAngle(angle, 320);
+    /**
+     * Builds a ball at the centre line heading toward one side.
+     * @param spread 0 to 1, spacing several serves apart vertically
+     */
+    serve(direction, spread = 0) {
+        const angle = MathHelper.random(-0.35, 0.35)
+            + (spread - 0.5) * 0.9
+            + (direction < 0 ? Math.PI : 0);
+        return {
+            position: new Vector2(this.width / 2, this.height / 2),
+            velocity: Vector2.fromAngle(angle, this.rules.serveSpeed)
+        };
     }
 
-    scorePoint(scorer) {
+    /** Puts a ball that has just gone out back into play. */
+    respawn(ball, direction) {
+        const fresh = this.serve(direction, Math.random());
+        ball.position.set(fresh.position.x, fresh.position.y);
+        ball.velocity.set(fresh.velocity.x, fresh.velocity.y);
+    }
+
+    scorePoint(scorer, ball) {
         if (scorer === "player") this.playerScore += 1;
         else this.aiScore += 1;
         this.emit();
 
-        if (this.playerScore >= WIN_SCORE || this.aiScore >= WIN_SCORE) {
+        const target = this.rules.winScore;
+        if (this.playerScore >= target || this.aiScore >= target) {
             this.gameOver();
             return;
         }
         this.audio.play(scorer === "player" ? "eat" : "hurt");
-        this.resetBall(scorer === "player" ? -1 : 1);
+        // The ball that went out is the one served back, so multiball keeps its
+        // full complement without ever gaining one.
+        this.respawn(ball, scorer === "player" ? -1 : 1);
     }
     //</editor-fold>
 
@@ -198,7 +296,11 @@ export class PongGame extends Game {
 
         this.movePlayer(delta);
         this.moveAi(delta);
-        this.updateBall(delta);
+        for (const ball of this.balls) {
+            this.updateBall(ball, delta);
+            // A point may have ended the match mid-list; stop simulating then.
+            if (this.state !== State.PLAYING) break;
+        }
         this.particles.update(delta);
     }
 
@@ -214,18 +316,37 @@ export class PongGame extends Game {
 
     moveAi(delta) {
         // Deliberately slower than the player and aimed at a slightly stale
-        // target, so it is beatable without being trivial.
-        const speed = 300;
-        const target = this.ball.position.y - this.paddleHeight / 2;
-        const current = this.ai.y;
-        const diff = target - current;
+        // target, so it is beatable without being trivial. With several balls
+        // in play it tracks whichever one is arriving first.
+        const speed = this.rules.aiSpeed;
+        const threat = this.threateningBall();
+        if (!threat) return;
+
+        const target = threat.position.y - this.paddleHeight / 2;
+        const diff = target - this.ai.y;
         if (Math.abs(diff) > 6) this.ai.y += Math.sign(diff) * speed * delta;
         this.ai.y = MathHelper.clamp(this.ai.y, 0, this.height - this.paddleHeight);
     }
 
-    updateBall(delta) {
-        const ball = this.ball;
-        ball.position.addSelf(ball.velocity.multiply(delta));
+    /** The incoming ball closest to the AI's own goal, or the nearest of any. */
+    threateningBall() {
+        let best = null;
+        let bestDistance = Infinity;
+        for (const ball of this.balls) {
+            // An outgoing ball is not a threat while an incoming one exists.
+            const distance = (this.width - ball.position.x)
+                + (ball.velocity.x > 0 ? 0 : this.width);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = ball;
+            }
+        }
+        return best;
+    }
+
+    updateBall(ball, delta) {
+        ball.position.x += ball.velocity.x * delta;
+        ball.position.y += ball.velocity.y * delta;
 
         if (ball.position.y < BALL_RADIUS) {
             ball.position.y = BALL_RADIUS;
@@ -238,8 +359,8 @@ export class PongGame extends Game {
         this.tryPaddleBounce(ball, PADDLE_MARGIN, this.player.y, 1);
         this.tryPaddleBounce(ball, this.width - PADDLE_MARGIN, this.ai.y, -1);
 
-        if (ball.position.x < -20) this.scorePoint("ai");
-        else if (ball.position.x > this.width + 20) this.scorePoint("player");
+        if (ball.position.x < -20) this.scorePoint("ai", ball);
+        else if (ball.position.x > this.width + 20) this.scorePoint("player", ball);
     }
 
     tryPaddleBounce(ball, paddleX, paddleY, facing) {
@@ -250,15 +371,16 @@ export class PongGame extends Game {
         if (ball.position.y < paddleY || ball.position.y > paddleY + this.paddleHeight) return;
 
         const hitPoint = (ball.position.y - (paddleY + this.paddleHeight / 2)) / (this.paddleHeight / 2);
-        const speed = Math.min(ball.velocity.magnitude() * 1.04, 720);
+        const rules = this.rules;
+        const speed = Math.min(ball.velocity.magnitude() * rules.rallyGain, rules.maxSpeed);
         const spread = MathHelper.clamp(hitPoint, -1, 1) * 0.9;
-        const baseAngle = facing > 0 ? 0 : Math.PI;
-        this.ball.velocity = Vector2.fromAngle(baseAngle + spread, speed);
+        const angle = (facing > 0 ? 0 : Math.PI) + spread;
+        ball.velocity.set(Math.cos(angle) * speed, Math.sin(angle) * speed);
         ball.position.x = facing > 0 ? paddleX + BALL_RADIUS + 0.5 : paddleX - BALL_RADIUS - 0.5;
 
         this.shakeAmount = 3;
         this.audio.play("paddle");
-        this.particles.burst(ball.position.copy(), "#38bdf8", 10, 180, 0.4, 1.6);
+        this.particles.burst(ball.position, "#38bdf8", 10, 180, 0.4, 1.6);
     }
     //</editor-fold>
 
@@ -276,7 +398,7 @@ export class PongGame extends Game {
         if (this.state !== State.MENU) {
             this.drawPaddle(ctx, PADDLE_MARGIN - this.paddleWidth / 2, this.player.y, "#4ade80");
             this.drawPaddle(ctx, this.width - PADDLE_MARGIN - this.paddleWidth / 2, this.ai.y, "#f43f5e");
-            this.drawBall(ctx);
+            this.drawBalls(ctx);
         }
         this.particles.draw(ctx);
         ctx.restore();
@@ -302,7 +424,7 @@ export class PongGame extends Game {
     drawPaddle(ctx, x, y, color) {
         ctx.fillStyle = color;
         ctx.shadowColor = color;
-        ctx.shadowBlur = 14;
+        ctx.shadowBlur = Quality.glow(14);
         ctx.beginPath();
         if (ctx.roundRect) ctx.roundRect(x, y, this.paddleWidth, this.paddleHeight, 5);
         else ctx.rect(x, y, this.paddleWidth, this.paddleHeight);
@@ -310,13 +432,17 @@ export class PongGame extends Game {
         ctx.shadowBlur = 0;
     }
 
-    drawBall(ctx) {
+    drawBalls(ctx) {
+        // The balls share every piece of state, so they share one path too.
         ctx.beginPath();
-        ctx.arc(this.ball.position.x, this.ball.position.y, BALL_RADIUS, 0, Math.PI * 2);
+        for (const ball of this.balls) {
+            ctx.moveTo(ball.position.x + BALL_RADIUS, ball.position.y);
+            ctx.arc(ball.position.x, ball.position.y, BALL_RADIUS, 0, Math.PI * 2);
+        }
         ctx.strokeStyle = "#e2e8f0";
         ctx.lineWidth = 2;
         ctx.shadowColor = "#e2e8f0";
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = Quality.glow(12);
         ctx.stroke();
         ctx.shadowBlur = 0;
     }
@@ -336,7 +462,8 @@ export class PongGame extends Game {
         ctx.font = "500 11px 'JetBrains Mono', ui-monospace, monospace";
         ctx.fillStyle = "#94a3b8";
         ctx.textAlign = "center";
-        ctx.fillText(`FIRST TO ${WIN_SCORE}`, this.width / 2, 56);
+        ctx.fillText(`${this.rules.label.toUpperCase()} · FIRST TO ${this.rules.winScore}`,
+            this.width / 2, 56);
     }
     //</editor-fold>
 }

@@ -39,11 +39,16 @@
 
                 <div class="overlay" data-overlay="menu" hidden>
                     <div class="panel">
-                        <p class="panel__eyebrow">Grid arcade</p>
+                        <p class="panel__eyebrow" data-field="mode-eyebrow">Classic</p>
                         <h2>Neon Snake</h2>
-                        <p class="panel__lead">
-                            Eat, grow, don't double back on yourself. The walls don't forgive either.
+                        <p class="panel__lead" data-field="mode-tagline">
+                            Eat, grow, don't double back. The walls are lethal.
                         </p>
+                        <div class="mode-select" role="group" aria-label="Game mode">
+                            <button class="mode-pill" data-mode="classic" aria-pressed="true">Classic</button>
+                            <button class="mode-pill" data-mode="wrap" aria-pressed="false">Wrap</button>
+                            <button class="mode-pill" data-mode="maze" aria-pressed="false">Maze</button>
+                        </div>
                         <button class="button button--primary" data-action="start">Play</button>
                         <dl class="panel__stats">
                             <div><dt>Best</dt><dd data-field="highscore">0</dd></div>
@@ -80,6 +85,9 @@
                     <button class="icon-button" data-action="mute" aria-pressed="false" title="Mute (M)">
                         <span data-field="mute-label">Sound on</span>
                     </button>
+                    <button class="icon-button" data-action="quality" title="Render quality: auto, high, medium or low">
+                        <span data-field="quality-label">Quality auto</span>
+                    </button>
                     <button class="icon-button" data-action="fullscreen" title="Fullscreen">
                         Fullscreen
                     </button>
@@ -106,11 +114,12 @@
                     </ul>
                 </article>
                 <article class="card">
-                    <h3>Scoring</h3>
+                    <h3>Modes</h3>
                     <ul class="keys">
-                        <li>Each pellet is worth <span class="key-word">10</span> points</li>
-                        <li>The snake speeds up slightly with every pellet eaten</li>
-                        <li>Hitting a wall or your own tail ends the run</li>
+                        <li><span class="key-word">Classic</span> — lethal walls, <span class="key-word">10</span> a pellet</li>
+                        <li><span class="key-word">Wrap</span> — edges tunnel through, faster, <span class="key-word">12</span> a pellet</li>
+                        <li><span class="key-word">Maze</span> — blocks in the arena, <span class="key-word">15</span> a pellet</li>
+                        <li>Each mode keeps its own best score</li>
                     </ul>
                 </article>
             </div>

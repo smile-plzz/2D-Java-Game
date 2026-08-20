@@ -80,7 +80,12 @@ class KeyboardInput {
 
     /** True when any of the given keys is held. */
     anyDown(...keys) {
-        return keys.some((key) => this.down.has(key));
+        // A plain loop rather than some(): this runs several times per frame
+        // and the callback allocation is pure overhead.
+        for (let i = 0; i < keys.length; i++) {
+            if (this.down.has(keys[i])) return true;
+        }
+        return false;
     }
 
     /**
@@ -112,6 +117,10 @@ class MouseInput {
         // Game keeps this in sync on every resize; the identity default is
         // correct whenever the two spaces are the same size.
         this.transform = { originX: 0, originY: 0, scale: 1 };
+        // getBoundingClientRect forces the browser to settle pending layout.
+        // Doing that on every mousemove is a real cost during a fast drag, so
+        // the box is cached and dropped whenever it could have moved.
+        this.bounds = null;
     }
 
     /**
@@ -138,11 +147,29 @@ class MouseInput {
         element.addEventListener("mouseenter", () => { this.inside = true; });
         element.addEventListener("mouseleave", () => { this.inside = false; });
         element.addEventListener("contextmenu", (event) => event.preventDefault());
+
+        const drop = () => this.invalidateBounds();
+        window.addEventListener("scroll", drop, { passive: true, capture: true });
+        window.addEventListener("resize", drop, { passive: true });
+    }
+
+    /** Forgets the cached canvas box; the next event measures it again. */
+    invalidateBounds() {
+        this.bounds = null;
+    }
+
+    getBounds() {
+        if (!this.bounds) this.bounds = this.element.getBoundingClientRect();
+        return this.bounds;
     }
 
     updatePosition(event) {
-        const bounds = this.element.getBoundingClientRect();
-        if (bounds.width === 0 || bounds.height === 0) return;
+        const bounds = this.getBounds();
+        if (bounds.width === 0 || bounds.height === 0) {
+            // A zero sized box means the layout has moved on without us.
+            this.invalidateBounds();
+            return;
+        }
         const { originX, originY, scale } = this.transform;
         this.position.set(
             (event.clientX - bounds.left - originX) / scale,

@@ -39,11 +39,16 @@
 
                 <div class="overlay" data-overlay="menu" hidden>
                     <div class="panel">
-                        <p class="panel__eyebrow">Strategy</p>
+                        <p class="panel__eyebrow" data-field="mode-eyebrow">Standard</p>
                         <h2>Connect Four</h2>
-                        <p class="panel__lead">
-                            Four in a row wins it. The AI looks five moves ahead, so it won't miss one.
+                        <p class="panel__lead" data-field="mode-tagline">
+                            Minimax with alpha-beta pruning, five plies deep. It will punish a loose column.
                         </p>
+                        <div class="mode-select" role="group" aria-label="Difficulty">
+                            <button class="mode-pill" data-mode="casual" aria-pressed="false">Casual</button>
+                            <button class="mode-pill" data-mode="standard" aria-pressed="true">Standard</button>
+                            <button class="mode-pill" data-mode="expert" aria-pressed="false">Expert</button>
+                        </div>
                         <button class="button button--primary" data-action="start">Play</button>
                         <dl class="panel__stats">
                             <div><dt>Best streak</dt><dd data-field="highscore">0</dd></div>
@@ -66,6 +71,9 @@
                 <div class="stage__controls">
                     <button class="icon-button" data-action="mute" aria-pressed="false" title="Mute (M)">
                         <span data-field="mute-label">Sound on</span>
+                    </button>
+                    <button class="icon-button" data-action="quality" title="Render quality: auto, high, medium or low">
+                        <span data-field="quality-label">Quality auto</span>
                     </button>
                     <button class="icon-button" data-action="fullscreen" title="Fullscreen">
                         Fullscreen
