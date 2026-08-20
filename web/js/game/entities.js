@@ -1,5 +1,6 @@
 import { Vector2 } from "../framework/vector2.js";
 import { MathHelper } from "../framework/mathhelper.js";
+import { Quality } from "../framework/quality.js";
 import { Sinusoidal } from "../framework/ease.js";
 
 export const Palette = {
@@ -15,15 +16,41 @@ export const Palette = {
     wall: "#1e293b"
 };
 
+// Unit polygons, cached per side count. Every shape on screen is one of five
+// or six of these, so the sines and cosines are worth computing once and
+// scaling rather than recomputing per vertex per frame.
+const UNIT_POLYGONS = new Map();
+
+function unitPolygon(sides) {
+    let points = UNIT_POLYGONS.get(sides);
+    if (!points) {
+        points = new Float32Array(sides * 2);
+        for (let i = 0; i < sides; i++) {
+            const angle = (i / sides) * Math.PI * 2;
+            points[i * 2] = Math.cos(angle);
+            points[i * 2 + 1] = Math.sin(angle);
+        }
+        UNIT_POLYGONS.set(sides, points);
+    }
+    return points;
+}
+
 /**
  * Traces a regular polygon. Every entity in the game is drawn from one.
  */
 export function polygonPath(ctx, x, y, radius, sides, rotation = 0) {
+    const points = unitPolygon(sides);
+    // One rotation applied to the cached unit shape, instead of a cos and a
+    // sin per corner.
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+
     ctx.beginPath();
     for (let i = 0; i < sides; i++) {
-        const angle = rotation + (i / sides) * Math.PI * 2;
-        const px = x + Math.cos(angle) * radius;
-        const py = y + Math.sin(angle) * radius;
+        const ux = points[i * 2];
+        const uy = points[i * 2 + 1];
+        const px = x + (ux * cos - uy * sin) * radius;
+        const py = y + (ux * sin + uy * cos) * radius;
         if (i === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
     }
@@ -32,15 +59,22 @@ export function polygonPath(ctx, x, y, radius, sides, rotation = 0) {
 
 /**
  * Strokes a shape with a glow. Kept in one place so the whole game shares a
- * single visual language.
+ * single visual language — and so the glow, which is the most expensive thing
+ * canvas does per shape, can be turned down from one place when the quality
+ * level drops.
  */
 export function neonStroke(ctx, color, lineWidth = 2, glow = 12) {
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = glow;
+    const blur = Quality.glow(glow);
+    if (blur > 0) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = blur;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        return;
+    }
     ctx.stroke();
-    ctx.shadowBlur = 0;
 }
 
 /**
@@ -147,11 +181,27 @@ export class Player extends Entity {
 
         const boosting = this.dashTimer > 0;
         if (!boosting) {
-            const push = this.thrust.truncate(1).multiply(this.acceleration * delta);
-            this.velocity.addSelf(push);
-            this.velocity = this.velocity.truncate(this.maxSpeed);
+            // Scalar throughout: this is the one entity guaranteed to run every
+            // single frame of every run.
+            let pushX = this.thrust.x;
+            let pushY = this.thrust.y;
+            const thrustSquared = pushX * pushX + pushY * pushY;
+            if (thrustSquared > 1) {
+                const scale = 1 / Math.sqrt(thrustSquared);
+                pushX *= scale;
+                pushY *= scale;
+            }
+            const step = this.acceleration * delta;
+            this.velocity.x += pushX * step;
+            this.velocity.y += pushY * step;
+
+            const speedSquared = this.velocity.x * this.velocity.x
+                + this.velocity.y * this.velocity.y;
+            if (speedSquared > this.maxSpeed * this.maxSpeed) {
+                this.velocity.multiplySelf(this.maxSpeed / Math.sqrt(speedSquared));
+            }
             // Exponential damping keeps the feel identical at any frame rate.
-            this.velocity.multiplySelf(Math.pow(this.friction, delta * 60));
+            this.velocity.multiplySelf(MathHelper.damping(this.friction, delta));
         }
 
         super.update(delta, world);
@@ -160,11 +210,17 @@ export class Player extends Entity {
         this.position.x = MathHelper.clamp(this.position.x, this.radius, world.width - this.radius);
         this.position.y = MathHelper.clamp(this.position.y, this.radius, world.height - this.radius);
 
-        if (this.thrust.magnitudeSquared() > 0.05 && Math.random() < 0.7) {
-            const back = this.thrust.normalize().negate();
-            world.particles.cone(
-                this.position.add(back.multiply(this.radius)),
-                back, Palette.player, 1, 190, 0.5, 0.28, 2
+        if (Quality.trails && this.thrust.magnitudeSquared() > 0.05 && Math.random() < 0.7) {
+            const length = this.thrust.magnitude();
+            const backX = -this.thrust.x / length;
+            const backY = -this.thrust.y / length;
+            const angle = Math.atan2(backY, backX) + MathHelper.random(-0.28, 0.28);
+            const speed = 190 * MathHelper.random(0.4, 1);
+            world.particles.emitAt(
+                this.position.x + backX * this.radius,
+                this.position.y + backY * this.radius,
+                Math.cos(angle) * speed, Math.sin(angle) * speed,
+                Palette.player, 0.28 * MathHelper.random(0.7, 1.3), 2, 0.9
             );
         }
 
@@ -281,9 +337,10 @@ export class Bullet extends Entity {
     }
 
     draw(ctx) {
-        const tail = this.velocity.multiply(this.fromPlayer ? 0.022 : 0.03);
+        const tail = this.fromPlayer ? 0.022 : 0.03;
         ctx.beginPath();
-        ctx.moveTo(this.position.x - tail.x, this.position.y - tail.y);
+        ctx.moveTo(this.position.x - this.velocity.x * tail,
+            this.position.y - this.velocity.y * tail);
         ctx.lineTo(this.position.x, this.position.y);
         neonStroke(ctx, this.color, this.radius, 12);
     }
@@ -307,12 +364,16 @@ export class Pickup extends Entity {
         // Drift toward the player once they are close, so pickups feel magnetic.
         const player = world.player;
         if (player && player.alive) {
-            const toPlayer = player.position.subtract(this.position);
-            if (toPlayer.magnitudeSquared() < 140 * 140) {
-                this.velocity = this.velocity.lerp(toPlayer.normalize().multiply(320), 0.12);
+            const dx = player.position.x - this.position.x;
+            const dy = player.position.y - this.position.y;
+            const distanceSquared = dx * dx + dy * dy;
+            if (distanceSquared < 140 * 140 && distanceSquared > 0) {
+                const scale = 320 / Math.sqrt(distanceSquared);
+                this.velocity.x += (dx * scale - this.velocity.x) * 0.12;
+                this.velocity.y += (dy * scale - this.velocity.y) * 0.12;
             }
         }
-        this.velocity.multiplySelf(Math.pow(0.94, delta * 60));
+        this.velocity.multiplySelf(MathHelper.damping(0.94, delta));
         super.update(delta, world);
         this.bounceInBounds(world, 0.6);
     }
@@ -396,9 +457,32 @@ export class Enemy extends Entity {
 
     /** Steering helper: accelerate toward a target, capped at maxSpeed. */
     seek(target, acceleration, maxSpeed, delta) {
-        const desired = target.subtract(this.position).normalize().multiply(acceleration * delta);
-        this.velocity.addSelf(desired);
-        this.velocity = this.velocity.truncate(maxSpeed);
+        this.seekPoint(target.x, target.y, acceleration, maxSpeed, delta);
+    }
+
+    /**
+     * The same steering in plain numbers. Runs for every enemy every frame, so
+     * it works on the velocity in place rather than allocating the three
+     * intermediate vectors the expression form would.
+     */
+    seekPoint(targetX, targetY, acceleration, maxSpeed, delta) {
+        let dx = targetX - this.position.x;
+        let dy = targetY - this.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > 0) {
+            const step = (acceleration * delta) / distance;
+            dx *= step;
+            dy *= step;
+            this.velocity.x += dx;
+            this.velocity.y += dy;
+        }
+
+        const speedSquared = this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y;
+        if (speedSquared > maxSpeed * maxSpeed) {
+            const scale = maxSpeed / Math.sqrt(speedSquared);
+            this.velocity.x *= scale;
+            this.velocity.y *= scale;
+        }
     }
 
     draw(ctx) {
@@ -435,9 +519,10 @@ export class Seeker extends Enemy {
     }
 
     behave(delta, world) {
-        this.seek(world.player.position, this.acceleration, this.maxSpeed, delta);
-        this.rotation = this.velocity.angle();
-        this.velocity.multiplySelf(Math.pow(0.98, delta * 60));
+        const target = world.player.position;
+        this.seekPoint(target.x, target.y, this.acceleration, this.maxSpeed, delta);
+        this.rotation = Math.atan2(this.velocity.y, this.velocity.x);
+        this.velocity.multiplySelf(MathHelper.damping(0.98, delta));
     }
 
     draw(ctx) {
@@ -466,7 +551,8 @@ export class Drifter extends Enemy {
 
     behave(delta, world) {
         // Constant speed: the bounce should never bleed off momentum.
-        this.velocity = this.velocity.normalize().multiply(this.speed);
+        const length = this.velocity.magnitude();
+        if (length > 0) this.velocity.multiplySelf(this.speed / length);
         this.bounceInBounds(world, 1);
     }
 }
@@ -490,11 +576,22 @@ export class Splitter extends Enemy {
         const sway = Sinusoidal.easeInOut(
             (this.wobble % (Math.PI * 2)) / (Math.PI * 2), -1, 2, 1
         );
-        const toPlayer = world.player.position.subtract(this.position).normalize();
-        const offset = toPlayer.perpendicular().multiply(sway * 0.5);
-        this.seek(this.position.add(toPlayer.add(offset).multiply(100)),
-            this.acceleration, this.maxSpeed, delta);
-        this.velocity.multiplySelf(Math.pow(0.985, delta * 60));
+
+        const target = world.player.position;
+        let toPlayerX = target.x - this.position.x;
+        let toPlayerY = target.y - this.position.y;
+        const distance = Math.sqrt(toPlayerX * toPlayerX + toPlayerY * toPlayerY) || 1;
+        toPlayerX /= distance;
+        toPlayerY /= distance;
+
+        // Aim at a point ahead, pushed sideways by the sway.
+        const offset = sway * 0.5;
+        this.seekPoint(
+            this.position.x + (toPlayerX - toPlayerY * offset) * 100,
+            this.position.y + (toPlayerY + toPlayerX * offset) * 100,
+            this.acceleration, this.maxSpeed, delta
+        );
+        this.velocity.multiplySelf(MathHelper.damping(0.985, delta));
     }
 
     onDeath(world) {
@@ -523,26 +620,45 @@ export class Turret extends Enemy {
     }
 
     behave(delta, world) {
-        const toPlayer = world.player.position.subtract(this.position);
-        const distance = toPlayer.magnitude();
+        const target = world.player.position;
+        const dx = target.x - this.position.x;
+        const dy = target.y - this.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+        const aimX = dx / distance;
+        const aimY = dy / distance;
+
         // Close in when far, back off when close, strafe when comfortable.
-        const direction = distance > this.preferredRange + 60
-            ? toPlayer.normalize()
-            : distance < this.preferredRange - 60
-                ? toPlayer.normalize().negate()
-                : toPlayer.normalize().perpendicular();
-        this.velocity.addSelf(direction.multiply(380 * delta));
-        this.velocity = this.velocity.truncate(this.maxSpeed);
-        this.velocity.multiplySelf(Math.pow(0.97, delta * 60));
+        let steerX = aimX;
+        let steerY = aimY;
+        if (distance < this.preferredRange - 60) {
+            steerX = -aimX;
+            steerY = -aimY;
+        } else if (distance <= this.preferredRange + 60) {
+            steerX = -aimY;
+            steerY = aimX;
+        }
+
+        const push = 380 * delta;
+        this.velocity.x += steerX * push;
+        this.velocity.y += steerY * push;
+        const speedSquared = this.velocity.x * this.velocity.x + this.velocity.y * this.velocity.y;
+        if (speedSquared > this.maxSpeed * this.maxSpeed) {
+            this.velocity.multiplySelf(this.maxSpeed / Math.sqrt(speedSquared));
+        }
+        this.velocity.multiplySelf(MathHelper.damping(0.97, delta));
         this.bounceInBounds(world, 0.4);
 
         this.fireTimer -= delta;
         if (this.fireTimer <= 0) {
             this.fireTimer = Math.max(0.65, 1.9 - this.tier * 0.06);
-            const aim = toPlayer.normalize();
+            const speed = 250 + this.tier * 6;
+            const aim = new Vector2(aimX, aimY);
             world.bullets.push(new Bullet(
-                this.position.add(aim.multiply(this.radius + 3)),
-                aim.multiply(250 + this.tier * 6),
+                new Vector2(
+                    this.position.x + aimX * (this.radius + 3),
+                    this.position.y + aimY * (this.radius + 3)
+                ),
+                new Vector2(aimX * speed, aimY * speed),
                 Palette.enemyBullet, 1, false
             ));
             world.particles.cone(this.position, aim, Palette.enemyBullet, 4, 160, 0.4, 0.25, 1.5);

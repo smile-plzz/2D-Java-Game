@@ -2,6 +2,7 @@ import { Game } from "../framework/game.js";
 import { Vector2 } from "../framework/vector2.js";
 import { MathHelper } from "../framework/mathhelper.js";
 import { Keyboard, Keys } from "../framework/input.js";
+import { Quality } from "../framework/quality.js";
 import { ParticleSystem } from "../game/particles.js";
 import { AudioBank } from "../game/audio.js";
 
@@ -12,11 +13,52 @@ export const State = {
     GAME_OVER: "gameover"
 };
 
-const HIGH_SCORE_KEY = "neon-snake.highscore";
+export const Mode = {
+    CLASSIC: "classic",
+    WRAP: "wrap",
+    MAZE: "maze"
+};
+
+/** Menu copy and per-mode tuning, kept together so a new mode is one entry. */
+export const MODE_INFO = {
+    [Mode.CLASSIC]: {
+        label: "Classic",
+        tagline: "Eat, grow, don't double back. The walls are lethal.",
+        wrap: false,
+        walls: 0,
+        startInterval: 0.15,
+        minInterval: 0.06,
+        ramp: 0.003,
+        foodScore: 10
+    },
+    [Mode.WRAP]: {
+        label: "Wrap",
+        tagline: "The edges tunnel through to the far side. Only your own tail can end this.",
+        wrap: true,
+        walls: 0,
+        startInterval: 0.13,
+        minInterval: 0.05,
+        ramp: 0.0035,
+        foodScore: 12
+    },
+    [Mode.MAZE]: {
+        label: "Maze",
+        tagline: "Blocks scattered through the arena. Thread between them — food never lands on one.",
+        wrap: true,
+        // Share of the grid given over to walls; scaled to whatever the screen
+        // turns out to be, so a phone and a monitor play the same game.
+        walls: 0.035,
+        startInterval: 0.15,
+        minInterval: 0.06,
+        ramp: 0.003,
+        foodScore: 15
+    }
+};
+
+const HIGH_SCORE_PREFIX = "neon-snake.highscore.";
 const CELL = 22;
-const START_INTERVAL = 0.15;
-const MIN_INTERVAL = 0.06;
 const FOOD_COLOR = "#f0abfc";
+const WALL_COLOR = "#64748b";
 
 /**
  * Neon Snake: classic grid snake, built on the same framework port as
@@ -33,8 +75,14 @@ export class SnakeGame extends Game {
         this.state = State.MENU;
         this.listeners = new Set();
 
+        this.mode = Mode.CLASSIC;
+        this.highScores = {};
+        for (const mode of Object.keys(MODE_INFO)) {
+            this.highScores[mode] = SnakeGame.loadHighScore(mode);
+        }
+
         this.score = 0;
-        this.highScore = SnakeGame.loadHighScore();
+        this.walls = new Set();
 
         this.cols = 1;
         this.rows = 1;
@@ -46,7 +94,7 @@ export class SnakeGame extends Game {
         this.pendingDirections = [];
         this.food = new Vector2(0, 0);
         this.stepTimer = 0;
-        this.stepInterval = START_INTERVAL;
+        this.stepInterval = MODE_INFO[this.mode].startInterval;
 
         this.shakeAmount = 0;
         this.eatPulse = 0;
@@ -88,7 +136,23 @@ export class SnakeGame extends Game {
     }
     //</editor-fold>
 
+    get highScore() { return this.highScores[this.mode]; }
+
     //<editor-fold desc="State">
+    /**
+     * Chooses the mode the next run starts in. Only takes effect outside a run;
+     * a game in progress keeps the mode it started with.
+     */
+    setMode(mode) {
+        if (!MODE_INFO[mode] || this.mode === mode) return;
+        if (this.state === State.PLAYING || this.state === State.PAUSED) return;
+        this.mode = mode;
+        this.emit();
+    }
+
+    /** Tuning for the mode currently selected. */
+    get rules() { return MODE_INFO[this.mode]; }
+
     onStateChange(listener) {
         this.listeners.add(listener);
         listener(this.state, this.snapshot());
@@ -103,6 +167,8 @@ export class SnakeGame extends Game {
         return {
             score: this.score,
             highScore: this.highScore,
+            highScores: this.highScores,
+            mode: this.mode,
             length: this.snake.length,
             muted: this.audio.muted
         };
@@ -114,7 +180,8 @@ export class SnakeGame extends Game {
         this.emit();
     }
 
-    startGame() {
+    startGame(mode = this.mode) {
+        this.mode = MODE_INFO[mode] ? mode : Mode.CLASSIC;
         this.direction = new Vector2(1, 0);
         this.pendingDirections = [];
 
@@ -126,8 +193,9 @@ export class SnakeGame extends Game {
             new Vector2(cx - 3, cy)
         ];
 
+        this.buildWalls();
         this.score = 0;
-        this.stepInterval = START_INTERVAL;
+        this.stepInterval = this.rules.startInterval;
         this.stepTimer = this.stepInterval;
         this.shakeAmount = 0;
         this.eatPulse = 0;
@@ -157,28 +225,71 @@ export class SnakeGame extends Game {
     }
 
     gameOver() {
-        if (this.score > this.highScore) {
-            this.highScore = this.score;
-            SnakeGame.saveHighScore(this.highScore);
+        if (this.score > this.highScores[this.mode]) {
+            this.highScores[this.mode] = this.score;
+            SnakeGame.saveHighScore(this.mode, this.score);
         }
         this.audio.play("crash");
         this.setState(State.GAME_OVER);
     }
 
-    static loadHighScore() {
+    static loadHighScore(mode) {
         try {
-            return Number(window.localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+            return Number(window.localStorage.getItem(HIGH_SCORE_PREFIX + mode)) || 0;
         } catch (error) {
             return 0;
         }
     }
 
-    static saveHighScore(value) {
+    static saveHighScore(mode, value) {
         try {
-            window.localStorage.setItem(HIGH_SCORE_KEY, String(value));
+            window.localStorage.setItem(HIGH_SCORE_PREFIX + mode, String(value));
         } catch (error) {
             // Losing the high score is not worth breaking the run over.
         }
+    }
+    //</editor-fold>
+
+    //<editor-fold desc="Walls">
+    /**
+     * Lays out the maze: short horizontal and vertical bars, none of them
+     * within a few cells of where the snake starts, so the opening seconds are
+     * never a coin flip. Cells are keyed by index rather than by object so a
+     * lookup during a step is a single hash probe.
+     */
+    buildWalls() {
+        this.walls.clear();
+        const share = this.rules.walls;
+        if (!share) return;
+
+        const centerX = Math.floor(this.cols / 2);
+        const centerY = Math.floor(this.rows / 2);
+        const target = Math.round(this.cols * this.rows * share);
+
+        let guard = target * 12;
+        while (this.walls.size < target && guard-- > 0) {
+            const horizontal = Math.random() < 0.5;
+            const length = MathHelper.randomInt(2, 4);
+            const x = MathHelper.randomInt(1, this.cols - 2);
+            const y = MathHelper.randomInt(1, this.rows - 2);
+
+            for (let i = 0; i < length; i++) {
+                const cellX = horizontal ? x + i : x;
+                const cellY = horizontal ? y : y + i;
+                if (cellX >= this.cols - 1 || cellY >= this.rows - 1) break;
+                // Leave the spawn corridor and the row the snake starts on clear.
+                if (Math.abs(cellY - centerY) <= 1 && Math.abs(cellX - centerX) <= 6) continue;
+                this.walls.add(this.cellKey(cellX, cellY));
+            }
+        }
+    }
+
+    cellKey(x, y) {
+        return y * this.cols + x;
+    }
+
+    isWall(x, y) {
+        return this.walls.has(this.cellKey(x, y));
     }
     //</editor-fold>
 
@@ -236,13 +347,26 @@ export class SnakeGame extends Game {
         if (this.pendingDirections.length > 0) this.direction = this.pendingDirections.shift();
 
         const head = this.snake[0];
+        const rules = this.rules;
         const next = new Vector2(head.x + this.direction.x, head.y + this.direction.y);
 
-        if (next.x < 0 || next.y < 0 || next.x >= this.cols || next.y >= this.rows) {
+        if (rules.wrap) {
+            // Leaving one edge arrives at the opposite one.
+            next.x = MathHelper.wrap(next.x, 0, this.cols);
+            next.y = MathHelper.wrap(next.y, 0, this.rows);
+        } else if (next.x < 0 || next.y < 0 || next.x >= this.cols || next.y >= this.rows) {
             this.shakeAmount = 18;
             this.gameOver();
             return;
         }
+
+        if (this.isWall(next.x, next.y)) {
+            this.shakeAmount = 18;
+            this.particles.burst(this.cellCenter(next), WALL_COLOR, 18, 220, 0.5, 2);
+            this.gameOver();
+            return;
+        }
+
         for (let i = 0; i < this.snake.length - 1; i++) {
             if (this.snake[i].x === next.x && this.snake[i].y === next.y) {
                 this.shakeAmount = 18;
@@ -254,9 +378,9 @@ export class SnakeGame extends Game {
         this.snake.unshift(next);
 
         if (next.x === this.food.x && next.y === this.food.y) {
-            this.score += 10;
+            this.score += rules.foodScore;
             this.eatPulse = 1;
-            this.stepInterval = Math.max(MIN_INTERVAL, this.stepInterval - 0.003);
+            this.stepInterval = Math.max(rules.minInterval, this.stepInterval - rules.ramp);
             this.audio.play("eat");
             this.particles.burst(this.cellCenter(next), FOOD_COLOR, 16, 200, 0.5, 2);
             this.placeFood();
@@ -267,14 +391,26 @@ export class SnakeGame extends Game {
     }
 
     placeFood() {
-        let point;
-        do {
-            point = new Vector2(
-                MathHelper.randomInt(0, this.cols - 1),
-                MathHelper.randomInt(0, this.rows - 1)
-            );
-        } while (this.snake.some((segment) => segment.x === point.x && segment.y === point.y));
-        this.food = point;
+        // Bounded rather than a do..while: a nearly full board could otherwise
+        // spin here forever looking for the last empty cell.
+        for (let attempt = 0; attempt < 400; attempt++) {
+            const x = MathHelper.randomInt(0, this.cols - 1);
+            const y = MathHelper.randomInt(0, this.rows - 1);
+            if (this.isWall(x, y)) continue;
+            if (this.snake.some((segment) => segment.x === x && segment.y === y)) continue;
+            this.food = new Vector2(x, y);
+            return;
+        }
+
+        // Exhausted the random attempts: take the first free cell there is.
+        for (let y = 0; y < this.rows; y++) {
+            for (let x = 0; x < this.cols; x++) {
+                if (this.isWall(x, y)) continue;
+                if (this.snake.some((segment) => segment.x === x && segment.y === y)) continue;
+                this.food = new Vector2(x, y);
+                return;
+            }
+        }
     }
 
     cellCenter(cell) {
@@ -297,6 +433,7 @@ export class SnakeGame extends Game {
 
         this.drawGrid(ctx);
         if (this.state !== State.MENU) {
+            this.drawWalls(ctx);
             this.drawFood(ctx);
             this.drawSnake(ctx);
         }
@@ -330,6 +467,23 @@ export class SnakeGame extends Game {
         );
     }
 
+    drawWalls(ctx) {
+        if (this.walls.size === 0) return;
+        // Every wall block is the same colour, so they share one fill and one
+        // stroke: two draw calls for the whole maze.
+        ctx.beginPath();
+        for (const key of this.walls) {
+            const x = this.gridOffsetX + (key % this.cols) * CELL;
+            const y = this.gridOffsetY + Math.floor(key / this.cols) * CELL;
+            ctx.rect(x + 2, y + 2, CELL - 4, CELL - 4);
+        }
+        ctx.fillStyle = "rgba(100, 116, 139, 0.22)";
+        ctx.fill();
+        ctx.strokeStyle = WALL_COLOR;
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+    }
+
     drawSnake(ctx) {
         this.snake.forEach((segment, i) => {
             const x = this.gridOffsetX + segment.x * CELL;
@@ -343,7 +497,7 @@ export class SnakeGame extends Game {
             ctx.strokeStyle = color;
             ctx.lineWidth = 2;
             ctx.shadowColor = color;
-            ctx.shadowBlur = i === 0 ? 14 : 8;
+            ctx.shadowBlur = Quality.glow(i === 0 ? 14 : 8);
             ctx.stroke();
             ctx.shadowBlur = 0;
         });
@@ -358,7 +512,7 @@ export class SnakeGame extends Game {
         ctx.strokeStyle = FOOD_COLOR;
         ctx.lineWidth = 2.2;
         ctx.shadowColor = FOOD_COLOR;
-        ctx.shadowBlur = 16;
+        ctx.shadowBlur = Quality.glow(16);
         ctx.stroke();
         ctx.shadowBlur = 0;
     }
@@ -379,6 +533,10 @@ export class SnakeGame extends Game {
         ctx.font = "700 15px 'JetBrains Mono', ui-monospace, monospace";
         ctx.fillStyle = "#e2e8f0";
         ctx.fillText(`LENGTH ${this.snake.length}`, this.width - pad, pad);
+
+        ctx.font = "500 12px 'JetBrains Mono', ui-monospace, monospace";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText(this.rules.label.toUpperCase(), this.width - pad, pad + 22);
     }
     //</editor-fold>
 }

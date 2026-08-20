@@ -1,5 +1,6 @@
 import { GameTime } from "./gametime.js";
 import { Keyboard, Mouse } from "./input.js";
+import { Quality } from "./quality.js";
 
 /**
  * Base class for a game.
@@ -20,6 +21,7 @@ export class Game {
         this.canvas = canvas;
         this.ctx = canvas.getContext("2d", { alpha: false });
         this.gameTime = new GameTime();
+        this.quality = Quality;
         this.backgroundColor = options.backgroundColor || "#0b0f1a";
         this.running = false;
         this.frameHandle = 0;
@@ -40,8 +42,17 @@ export class Game {
 
         this.handleResize = this.handleResize.bind(this);
         this.tick = this.tick.bind(this);
-        window.addEventListener("resize", this.handleResize);
-        window.addEventListener("orientationchange", this.handleResize);
+        // Resize events arrive in bursts while a window is dragged, and each
+        // one reallocates the backing store. Coalescing them onto the next
+        // frame means one reallocation per burst instead of dozens.
+        this.requestResize = this.requestResize.bind(this);
+        this.resizeHandle = 0;
+
+        window.addEventListener("resize", this.requestResize, { passive: true });
+        window.addEventListener("orientationchange", this.requestResize, { passive: true });
+        // A change of quality level changes the pixel ratio the backing store
+        // is allocated at, so the canvas has to be sized again.
+        this.releaseQuality = Quality.onChange(this.requestResize);
         document.addEventListener("visibilitychange", () => {
             if (document.hidden) this.onWindowBlur();
         });
@@ -70,6 +81,8 @@ export class Game {
         if (!this.running) return;
         this.running = false;
         cancelAnimationFrame(this.frameHandle);
+        if (this.resizeHandle) cancelAnimationFrame(this.resizeHandle);
+        if (this.releaseQuality) this.releaseQuality();
         this.unloadContent();
     }
 
@@ -101,6 +114,9 @@ export class Game {
         this.frameHandle = requestAnimationFrame(this.tick);
 
         this.gameTime.tick(timestamp);
+        // The raw delta is what the frame actually cost, so it is what the
+        // quality ladder judges; the clamped one is what the physics sees.
+        Quality.sample(this.gameTime.getDeltaTime());
         // Clamping here rather than inside GameTime keeps the clock honest
         // while still protecting the physics from a huge catch-up frame.
         if (this.gameTime.getDeltaTimeSeconds() > this.maxDeltaSeconds)
@@ -111,22 +127,34 @@ export class Game {
         Keyboard.endFrame();
         Mouse.endFrame();
 
+        // setTransform resets the matrix outright, so the frame needs no
+        // save/restore pair of its own to undo the previous one.
         const ctx = this.ctx;
-        ctx.save();
         ctx.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, this.offsetX, this.offsetY);
         ctx.fillStyle = this.backgroundColor;
         ctx.fillRect(0, 0, this.width, this.height);
         this.draw(ctx);
-        ctx.restore();
     }
     //</editor-fold>
 
     //<editor-fold desc="Presentation">
+    /** Coalesces a burst of resize events into one resize on the next frame. */
+    requestResize() {
+        if (this.resizeHandle) return;
+        this.resizeHandle = requestAnimationFrame(() => {
+            this.resizeHandle = 0;
+            this.handleResize();
+        });
+    }
+
     /**
      * Resizes the backing store to match the element and the display density.
      */
     handleResize() {
-        const ratio = window.devicePixelRatio || 1;
+        // A phone reporting a ratio of 3 would have the game shading nine
+        // pixels for every one the player can tell apart. Capping it by quality
+        // level is the single biggest lever on fill rate there is.
+        const ratio = Math.min(window.devicePixelRatio || 1, Quality.maxPixelRatio);
         const boxWidth = this.canvas.clientWidth || this.width;
         const boxHeight = this.canvas.clientHeight || this.height;
 
@@ -148,12 +176,18 @@ export class Game {
         this.offsetX = originX * ratio;
         this.offsetY = originY * ratio;
 
-        this.canvas.width = Math.round(boxWidth * ratio);
-        this.canvas.height = Math.round(boxHeight * ratio);
+        // Assigning to width or height clears the canvas and reallocates its
+        // backing store even when the value is unchanged, so only do it when
+        // the size really moved.
+        const backingWidth = Math.round(boxWidth * ratio);
+        const backingHeight = Math.round(boxHeight * ratio);
+        if (this.canvas.width !== backingWidth) this.canvas.width = backingWidth;
+        if (this.canvas.height !== backingHeight) this.canvas.height = backingHeight;
 
         // Mouse events arrive in the element's CSS box; hand over the same
         // mapping the renderer uses so clicks land where they look like they do.
         Mouse.transform = { originX, originY, scale };
+        Mouse.invalidateBounds();
 
         this.onResize(this.width, this.height);
     }

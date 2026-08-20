@@ -86,6 +86,9 @@
                     <button class="icon-button" data-action="mute" aria-pressed="false" title="Mute (M)">
                         <span data-field="mute-label">Sound on</span>
                     </button>
+                    <button class="icon-button" data-action="quality" title="Render quality: auto, high, medium or low">
+                        <span data-field="quality-label">Quality auto</span>
+                    </button>
                     <button class="icon-button" data-action="fullscreen" title="Fullscreen">
                         Fullscreen
                     </button>
@@ -172,6 +175,16 @@
                             <td><code>game.animation.ease.*</code></td>
                             <td><code>framework/ease.js</code></td>
                             <td>All eleven easing families with the original (time, begin, change, duration) signature.</td>
+                        </tr>
+                        <tr>
+                            <td><em>no Java counterpart</em></td>
+                            <td><code>framework/quality.js</code></td>
+                            <td>Watches the frame time and scales glow, particle counts and the device pixel ratio to match — a problem a desktop JVM window never had.</td>
+                        </tr>
+                        <tr>
+                            <td><em>no Java counterpart</em></td>
+                            <td><code>framework/spatialgrid.js</code></td>
+                            <td>Uniform grid broad phase, so bullet against enemy stays cheap once a late wave fills the arena.</td>
                         </tr>
                     </tbody>
                 </table>

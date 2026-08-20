@@ -22,7 +22,7 @@
             <span class="logo" aria-hidden="true"></span>
             <div>
                 <h1>2D Java Game Arcade</h1>
-                <p>Six small games sharing one browser port of the 2D Java Game Framework.</p>
+                <p>Six small games, eighteen modes, one browser port of the 2D Java Game Framework.</p>
             </div>
         </div>
         <nav class="masthead__links">
@@ -48,7 +48,8 @@
                     <p class="game-card__eyebrow">Grid arcade</p>
                     <h2>Neon Snake</h2>
                     <p class="game-card__lead">
-                        Eat, grow, don't double back. Classic snake with a swipe-friendly touch layer.
+                        Eat, grow, don't double back, with a swipe-friendly touch layer.
+                        Classic, Wrap and Maze modes.
                     </p>
                     <span class="game-card__play">Play &rarr;</span>
                 </a>
@@ -57,7 +58,8 @@
                     <p class="game-card__eyebrow">Paddle arcade</p>
                     <h2>Brick Breaker</h2>
                     <p class="game-card__lead">
-                        Clear the grid, keep the ball alive. Every level packs in one more row of bricks.
+                        Clear the grid, keep the ball alive.
+                        Classic, one-life Blitz, and an Endless wall that creeps down on you.
                     </p>
                     <span class="game-card__play">Play &rarr;</span>
                 </a>
@@ -66,7 +68,8 @@
                     <p class="game-card__eyebrow">Head to head</p>
                     <h2>Neon Pong</h2>
                     <p class="game-card__lead">
-                        You against the machine. First to seven points takes the match.
+                        You against the machine.
+                        Classic, short-paddle Blitz, and Multiball with three in play at once.
                     </p>
                     <span class="game-card__play">Play &rarr;</span>
                 </a>
@@ -75,7 +78,8 @@
                     <p class="game-card__eyebrow">Sliding puzzle</p>
                     <h2>Neon 2048</h2>
                     <p class="game-card__lead">
-                        Slide, merge, reach 2048. Every move drops in a new tile.
+                        Slide, merge, reach the target tile.
+                        Three boards: Compact 3×3, the 4×4 Classic, and Grand 5×5.
                     </p>
                     <span class="game-card__play">Play &rarr;</span>
                 </a>
@@ -84,7 +88,8 @@
                     <p class="game-card__eyebrow">Strategy</p>
                     <h2>Connect Four</h2>
                     <p class="game-card__lead">
-                        Four in a row wins it, against a minimax AI that looks five moves ahead.
+                        Four in a row wins it, against a minimax AI.
+                        Casual, Standard and Expert difficulties — up to seven plies deep.
                     </p>
                     <span class="game-card__play">Play &rarr;</span>
                 </a>
@@ -121,7 +126,24 @@
                         </tr>
                         <tr>
                             <td><code>game/particles.js</code>, <code>game/audio.js</code></td>
-                            <td>The particle bursts and synthesised sound effects each game reuses.</td>
+                            <td>The particle bursts and synthesised sound effects each game reuses. The
+                                pool is held in typed arrays and drawn in batches, so a thousand live
+                                particles cost a few dozen draw calls between them.</td>
+                        </tr>
+                        <tr>
+                            <td><code>framework/quality.js</code></td>
+                            <td>Watches the frame time and scales glow, particle counts and the device
+                                pixel ratio to match. The quality button on every game pins it by hand.</td>
+                        </tr>
+                        <tr>
+                            <td><code>framework/spatialgrid.js</code></td>
+                            <td>Uniform grid broad phase, so bullet against enemy stays cheap once a
+                                late wave fills the arena.</td>
+                        </tr>
+                        <tr>
+                            <td><code>games/shell.js</code></td>
+                            <td>The chrome around each canvas: overlays, score readouts, mode pills and
+                                the sound, quality and fullscreen buttons.</td>
                         </tr>
                     </tbody>
                 </table>

@@ -1,7 +1,8 @@
 import { Game } from "../framework/game.js";
 import { Vector2 } from "../framework/vector2.js";
 import { MathHelper } from "../framework/mathhelper.js";
-import { Keyboard, Keys } from "../framework/input.js";
+import { Keyboard, Keys, Mouse } from "../framework/input.js";
+import { Quality } from "../framework/quality.js";
 import { ParticleSystem } from "../game/particles.js";
 import { AudioBank } from "../game/audio.js";
 
@@ -12,9 +13,52 @@ export const State = {
     GAME_OVER: "gameover"
 };
 
-const HIGH_SCORE_KEY = "brick-breaker.highscore";
+export const Mode = {
+    CLASSIC: "classic",
+    BLITZ: "blitz",
+    ENDLESS: "endless"
+};
+
+/** Menu copy and per-mode tuning, kept together so a new mode is one entry. */
+export const MODE_INFO = {
+    [Mode.CLASSIC]: {
+        label: "Classic",
+        tagline: "Clear the grid, keep the ball alive. Every level packs in one more row.",
+        lives: 3,
+        paddleWidth: 90,
+        baseSpeed: 360,
+        levelSpeed: 12,
+        scoreScale: 1,
+        // Seconds between descents, or 0 for a grid that stays put.
+        descendEvery: 0
+    },
+    [Mode.BLITZ]: {
+        label: "Blitz",
+        tagline: "One ball, one life, a narrow paddle and a quick one. Double points throughout.",
+        lives: 1,
+        paddleWidth: 68,
+        baseSpeed: 470,
+        levelSpeed: 18,
+        scoreScale: 2,
+        descendEvery: 0
+    },
+    [Mode.ENDLESS]: {
+        label: "Endless",
+        tagline: "The wall creeps down a row at a time. Clear it before it reaches your paddle.",
+        lives: 3,
+        paddleWidth: 96,
+        baseSpeed: 380,
+        levelSpeed: 8,
+        scoreScale: 1.5,
+        descendEvery: 9
+    }
+};
+
+const HIGH_SCORE_PREFIX = "brick-breaker.highscore.";
 const ROW_COLORS = ["#f43f5e", "#fbbf24", "#4ade80", "#38bdf8", "#a78bfa"];
 const BALL_RADIUS = 7;
+const BRICK_HEIGHT = 16;
+const BRICK_GAP = 6;
 
 /**
  * Brick Breaker: a paddle-and-ball arcade game on the same framework port
@@ -30,19 +74,29 @@ export class BreakerGame extends Game {
         this.state = State.MENU;
         this.listeners = new Set();
 
-        this.score = 0;
-        this.highScore = BreakerGame.loadHighScore();
-        this.level = 1;
-        this.lives = 3;
+        this.mode = Mode.CLASSIC;
+        this.highScores = {};
+        for (const mode of Object.keys(MODE_INFO)) {
+            this.highScores[mode] = BreakerGame.loadHighScore(mode);
+        }
 
-        this.paddle = { x: 0, y: 0, width: 90, height: 12 };
+        this.score = 0;
+        this.level = 1;
+        this.lives = MODE_INFO[this.mode].lives;
+        this.descendTimer = 0;
+
+        this.paddle = { x: 0, y: 0, width: MODE_INFO[this.mode].paddleWidth, height: 12 };
         this.ball = { position: new Vector2(), velocity: new Vector2(), launched: false };
         this.bricks = [];
+        this.bricksLeft = 0;
         this.shakeAmount = 0;
 
         this.pointerX = null;
         canvas.addEventListener("pointermove", (event) => {
-            const rect = canvas.getBoundingClientRect();
+            // Mouse holds a cached box for this same canvas, so tracking the
+            // paddle costs no layout work per pointer event.
+            const rect = Mouse.getBounds();
+            if (!rect || !rect.width) return;
             this.pointerX = ((event.clientX - rect.left) / rect.width) * this.width;
         });
         canvas.addEventListener("pointerdown", () => {
@@ -66,7 +120,23 @@ export class BreakerGame extends Game {
     }
     //</editor-fold>
 
+    get highScore() { return this.highScores[this.mode]; }
+
+    /** Tuning for the mode currently selected. */
+    get rules() { return MODE_INFO[this.mode]; }
+
     //<editor-fold desc="State">
+    /**
+     * Chooses the mode the next run starts in. Only takes effect outside a run;
+     * one in progress keeps the mode it started with.
+     */
+    setMode(mode) {
+        if (!MODE_INFO[mode] || this.mode === mode) return;
+        if (this.state === State.PLAYING || this.state === State.PAUSED) return;
+        this.mode = mode;
+        this.emit();
+    }
+
     onStateChange(listener) {
         this.listeners.add(listener);
         listener(this.state, this.snapshot());
@@ -81,6 +151,8 @@ export class BreakerGame extends Game {
         return {
             score: this.score,
             highScore: this.highScore,
+            highScores: this.highScores,
+            mode: this.mode,
             level: this.level,
             lives: this.lives,
             muted: this.audio.muted
@@ -93,11 +165,12 @@ export class BreakerGame extends Game {
         this.emit();
     }
 
-    startGame() {
+    startGame(mode = this.mode) {
+        this.mode = MODE_INFO[mode] ? mode : Mode.CLASSIC;
         this.score = 0;
         this.level = 1;
-        this.lives = 3;
-        this.paddle.width = 90;
+        this.lives = this.rules.lives;
+        this.paddle.width = this.rules.paddleWidth;
         this.paddle.x = (this.width - this.paddle.width) / 2;
         this.particles.clear();
         this.shakeAmount = 0;
@@ -127,25 +200,25 @@ export class BreakerGame extends Game {
     }
 
     gameOver() {
-        if (this.score > this.highScore) {
-            this.highScore = this.score;
-            BreakerGame.saveHighScore(this.highScore);
+        if (this.score > this.highScores[this.mode]) {
+            this.highScores[this.mode] = this.score;
+            BreakerGame.saveHighScore(this.mode, this.score);
         }
         this.audio.play("crash");
         this.setState(State.GAME_OVER);
     }
 
-    static loadHighScore() {
+    static loadHighScore(mode) {
         try {
-            return Number(window.localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+            return Number(window.localStorage.getItem(HIGH_SCORE_PREFIX + mode)) || 0;
         } catch (error) {
             return 0;
         }
     }
 
-    static saveHighScore(value) {
+    static saveHighScore(mode, value) {
         try {
-            window.localStorage.setItem(HIGH_SCORE_KEY, String(value));
+            window.localStorage.setItem(HIGH_SCORE_PREFIX + mode, String(value));
         } catch (error) {
             // Losing the high score is not worth breaking the run over.
         }
@@ -157,23 +230,45 @@ export class BreakerGame extends Game {
         const cols = 9;
         const rows = Math.min(3 + this.level, 7);
         const margin = 40;
-        const gap = 6;
-        const brickWidth = (this.width - margin * 2 - gap * (cols - 1)) / cols;
-        const brickHeight = 16;
+        const brickWidth = (this.width - margin * 2 - BRICK_GAP * (cols - 1)) / cols;
 
         this.bricks = [];
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
                 this.bricks.push({
-                    x: margin + col * (brickWidth + gap),
-                    y: 56 + row * (brickHeight + gap),
+                    x: margin + col * (brickWidth + BRICK_GAP),
+                    y: 56 + row * (BRICK_HEIGHT + BRICK_GAP),
                     width: brickWidth,
-                    height: brickHeight,
+                    height: BRICK_HEIGHT,
                     color: ROW_COLORS[row % ROW_COLORS.length],
-                    score: (rows - row) * 10,
+                    score: Math.round((rows - row) * 10 * this.rules.scoreScale),
                     alive: true
                 });
             }
+        }
+        this.descendTimer = this.rules.descendEvery;
+        this.bricksLeft = this.bricks.length;
+    }
+
+    /**
+     * Endless: walks the whole wall down one brick. Reaching the paddle ends
+     * the run outright — there is no ball to lose, the wall simply arrives.
+     */
+    descendBricks() {
+        const step = BRICK_HEIGHT + BRICK_GAP;
+        let lowest = 0;
+        for (const brick of this.bricks) {
+            if (!brick.alive) continue;
+            brick.y += step;
+            lowest = Math.max(lowest, brick.y + brick.height);
+        }
+
+        this.shakeAmount = 6;
+        this.audio.play("brick");
+        if (lowest >= this.paddle.y) {
+            this.lives = 0;
+            this.emit();
+            this.gameOver();
         }
     }
 
@@ -185,7 +280,7 @@ export class BreakerGame extends Game {
 
     launchBall() {
         this.ball.launched = true;
-        const speed = 360 + this.level * 12;
+        const speed = this.rules.baseSpeed + this.level * this.rules.levelSpeed;
         const angle = MathHelper.random(-0.5, 0.5) - Math.PI / 2;
         this.ball.velocity = Vector2.fromAngle(angle, speed);
         this.audio.play("launch");
@@ -220,6 +315,17 @@ export class BreakerGame extends Game {
         this.movePaddle(delta);
         if (!this.ball.launched) this.ball.position.x = this.paddle.x + this.paddle.width / 2;
         else this.updateBall(delta);
+
+        // The wall only advances once the ball is in play, so a launch is never
+        // rushed by a clock the player cannot see.
+        if (this.rules.descendEvery > 0 && this.ball.launched
+            && this.state === State.PLAYING) {
+            this.descendTimer -= delta;
+            if (this.descendTimer <= 0) {
+                this.descendTimer = this.rules.descendEvery;
+                this.descendBricks();
+            }
+        }
 
         this.particles.update(delta);
     }
@@ -270,6 +376,7 @@ export class BreakerGame extends Game {
             if (ball.position.y + BALL_RADIUS < brick.y || ball.position.y - BALL_RADIUS > brick.y + brick.height) continue;
 
             brick.alive = false;
+            this.bricksLeft -= 1;
             this.score += brick.score;
             this.shakeAmount = 4;
             this.audio.play("brick");
@@ -294,7 +401,8 @@ export class BreakerGame extends Game {
             break;
         }
 
-        if (this.bricks.every((brick) => !brick.alive)) {
+        // A counter rather than a scan over every brick on every frame.
+        if (this.bricksLeft <= 0) {
             this.level += 1;
             this.buildLevel();
             this.resetBall();
@@ -352,7 +460,7 @@ export class BreakerGame extends Game {
             ctx.strokeStyle = brick.color;
             ctx.lineWidth = 1.6;
             ctx.shadowColor = brick.color;
-            ctx.shadowBlur = 8;
+            ctx.shadowBlur = Quality.glow(8);
             ctx.strokeRect(brick.x + 1, brick.y + 1, brick.width - 2, brick.height - 2);
             ctx.shadowBlur = 0;
         }
@@ -361,7 +469,7 @@ export class BreakerGame extends Game {
     drawPaddle(ctx) {
         ctx.fillStyle = "#4ade80";
         ctx.shadowColor = "#4ade80";
-        ctx.shadowBlur = 14;
+        ctx.shadowBlur = Quality.glow(14);
         ctx.beginPath();
         if (ctx.roundRect) ctx.roundRect(this.paddle.x, this.paddle.y, this.paddle.width, this.paddle.height, 6);
         else ctx.rect(this.paddle.x, this.paddle.y, this.paddle.width, this.paddle.height);
@@ -375,7 +483,7 @@ export class BreakerGame extends Game {
         ctx.strokeStyle = "#e2e8f0";
         ctx.lineWidth = 2;
         ctx.shadowColor = "#e2e8f0";
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = Quality.glow(12);
         ctx.stroke();
         ctx.shadowBlur = 0;
     }
@@ -399,7 +507,17 @@ export class BreakerGame extends Game {
 
         ctx.font = "500 12px 'JetBrains Mono', ui-monospace, monospace";
         ctx.fillStyle = "#94a3b8";
-        ctx.fillText(`LIVES ${this.lives}`, this.width - pad, pad + 22);
+        ctx.fillText(`${this.rules.label.toUpperCase()} · LIVES ${this.lives}`,
+            this.width - pad, pad + 22);
+
+        // Endless: a countdown to the next descent, so it is never a surprise.
+        if (this.rules.descendEvery > 0 && this.ball.launched) {
+            const imminent = this.descendTimer < 2;
+            ctx.textAlign = "center";
+            ctx.font = "600 12px 'JetBrains Mono', ui-monospace, monospace";
+            ctx.fillStyle = imminent ? "#f43f5e" : "#94a3b8";
+            ctx.fillText(`WALL DROPS IN ${Math.ceil(this.descendTimer)}s`, this.width / 2, pad);
+        }
 
         if (!this.ball.launched) {
             ctx.textAlign = "center";

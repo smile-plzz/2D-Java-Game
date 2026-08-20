@@ -1,6 +1,7 @@
 import { Game } from "../framework/game.js";
 import { MathHelper } from "../framework/mathhelper.js";
-import { Keyboard, Keys } from "../framework/input.js";
+import { Keyboard, Keys, Mouse } from "../framework/input.js";
+import { Quality } from "../framework/quality.js";
 import { ParticleSystem } from "../game/particles.js";
 import { AudioBank } from "../game/audio.js";
 
@@ -10,13 +11,46 @@ export const State = {
     GAME_OVER: "gameover"
 };
 
-const HIGH_SCORE_KEY = "neon-connect-four.beststreak";
+export const Mode = {
+    CASUAL: "casual",
+    STANDARD: "standard",
+    EXPERT: "expert"
+};
+
+/**
+ * Menu copy and per-mode tuning. Difficulty here is search depth plus a
+ * blunder rate: a shallower search plays worse positionally, and the chance of
+ * taking the second best column keeps the easier modes from feeling scripted.
+ */
+export const MODE_INFO = {
+    [Mode.CASUAL]: {
+        label: "Casual",
+        tagline: "The AI looks two moves ahead and sometimes takes the second best column.",
+        depth: 2,
+        blunderChance: 0.25,
+        thinkTime: 0.35
+    },
+    [Mode.STANDARD]: {
+        label: "Standard",
+        tagline: "Minimax with alpha-beta pruning, five plies deep. It will punish a loose column.",
+        depth: 5,
+        blunderChance: 0,
+        thinkTime: 0.5
+    },
+    [Mode.EXPERT]: {
+        label: "Expert",
+        tagline: "Seven plies and no mercy. Take the centre early or don't bother.",
+        depth: 7,
+        blunderChance: 0,
+        thinkTime: 0.6
+    }
+};
+
+const HIGH_SCORE_PREFIX = "neon-connect-four.beststreak.";
 const COLS = 7;
 const ROWS = 6;
 const PLAYER = 1;
 const AI = 2;
-const AI_DEPTH = 5;
-const AI_THINK_TIME = 0.5;
 
 /**
  * Neon Connect Four: player versus a minimax AI with alpha-beta pruning.
@@ -39,8 +73,12 @@ export class ConnectFourGame extends Game {
         this.aiTimer = 0;
         this.hoverColumn = 3;
 
+        this.mode = Mode.STANDARD;
+        this.bestStreaks = {};
+        for (const mode of Object.keys(MODE_INFO)) {
+            this.bestStreaks[mode] = ConnectFourGame.loadBestStreak(mode);
+        }
         this.winStreak = 0;
-        this.bestStreak = ConnectFourGame.loadBestStreak();
 
         this.boardSize = { width: 0, height: 0 };
         this.cell = 0;
@@ -48,7 +86,10 @@ export class ConnectFourGame extends Game {
         this.offsetY = 0;
 
         canvas.addEventListener("pointermove", (event) => {
-            const rect = canvas.getBoundingClientRect();
+            // Mouse holds a cached box for this same canvas, so hovering a
+            // column costs no layout work per pointer event.
+            const rect = Mouse.getBounds();
+            if (!rect || !rect.width) return;
             const x = ((event.clientX - rect.left) / rect.width) * this.width;
             this.hoverColumn = MathHelper.clamp(Math.floor((x - this.offsetX) / this.cell), 0, COLS - 1);
         });
@@ -88,9 +129,27 @@ export class ConnectFourGame extends Game {
         return {
             score: this.winStreak,
             highScore: this.bestStreak,
+            highScores: this.bestStreaks,
+            mode: this.mode,
             winner: this.winner,
             muted: this.audio.muted
         };
+    }
+
+    get bestStreak() { return this.bestStreaks[this.mode]; }
+
+    /** Tuning for the difficulty currently selected. */
+    get rules() { return MODE_INFO[this.mode]; }
+
+    /**
+     * Chooses the difficulty the next game is played at. Only takes effect
+     * outside a game; one in progress keeps the difficulty it started with.
+     */
+    setMode(mode) {
+        if (!MODE_INFO[mode] || this.mode === mode) return;
+        if (this.state === State.PLAYING) return;
+        this.mode = mode;
+        this.emit();
     }
 
     setState(state) {
@@ -99,7 +158,8 @@ export class ConnectFourGame extends Game {
         this.emit();
     }
 
-    startGame() {
+    startGame(mode = this.mode) {
+        this.mode = MODE_INFO[mode] ? mode : Mode.STANDARD;
         this.board = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
         this.turn = PLAYER;
         this.winner = null;
@@ -115,27 +175,28 @@ export class ConnectFourGame extends Game {
         if (winner === "player") {
             this.winStreak += 1;
             if (this.winStreak > this.bestStreak) {
-                this.bestStreak = this.winStreak;
-                ConnectFourGame.saveBestStreak(this.bestStreak);
+                this.bestStreaks[this.mode] = this.winStreak;
+                ConnectFourGame.saveBestStreak(this.mode, this.winStreak);
             }
         } else if (winner === "ai") {
             this.winStreak = 0;
         }
+        this.emit();
         this.audio.play(winner === "player" ? "wave" : winner === "ai" ? "crash" : "pop");
         this.setState(State.GAME_OVER);
     }
 
-    static loadBestStreak() {
+    static loadBestStreak(mode) {
         try {
-            return Number(window.localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+            return Number(window.localStorage.getItem(HIGH_SCORE_PREFIX + mode)) || 0;
         } catch (error) {
             return 0;
         }
     }
 
-    static saveBestStreak(value) {
+    static saveBestStreak(mode, value) {
         try {
-            window.localStorage.setItem(HIGH_SCORE_KEY, String(value));
+            window.localStorage.setItem(HIGH_SCORE_PREFIX + mode, String(value));
         } catch (error) {
             // Losing the streak is not worth breaking the run over.
         }
@@ -169,7 +230,7 @@ export class ConnectFourGame extends Game {
 
         if (this.turn === PLAYER) {
             this.turn = AI;
-            this.aiTimer = AI_THINK_TIME;
+            this.aiTimer = this.rules.thinkTime;
         } else {
             this.turn = PLAYER;
         }
@@ -302,8 +363,20 @@ export class ConnectFourGame extends Game {
     }
 
     playAiMove() {
-        const [column] = this.minimax(this.board, AI_DEPTH, -Infinity, Infinity, true);
-        if (column !== null && column !== undefined) this.dropDisc(column);
+        const rules = this.rules;
+        const [column] = this.minimax(this.board, rules.depth, -Infinity, Infinity, true);
+        let choice = column;
+
+        // The easier modes occasionally pass on their own best answer, which
+        // reads as a beatable opponent rather than a broken one.
+        if (rules.blunderChance > 0 && Math.random() < rules.blunderChance) {
+            const alternatives = this.validColumns(this.board).filter((col) => col !== column);
+            if (alternatives.length > 0) {
+                choice = alternatives[MathHelper.randomInt(0, alternatives.length - 1)];
+            }
+        }
+
+        if (choice !== null && choice !== undefined) this.dropDisc(choice);
     }
     //</editor-fold>
 
@@ -397,7 +470,7 @@ export class ConnectFourGame extends Game {
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 2;
                 ctx.shadowColor = color;
-                ctx.shadowBlur = 10;
+                ctx.shadowBlur = Quality.glow(10);
                 ctx.stroke();
                 ctx.shadowBlur = 0;
             }
@@ -414,7 +487,7 @@ export class ConnectFourGame extends Game {
 
         ctx.font = "500 12px 'JetBrains Mono', ui-monospace, monospace";
         ctx.fillStyle = "#94a3b8";
-        ctx.fillText(`BEST ${this.bestStreak}`, pad, pad + 22);
+        ctx.fillText(`BEST ${this.bestStreak} · ${this.rules.label.toUpperCase()}`, pad, pad + 22);
 
         if (this.state === State.PLAYING) {
             ctx.textAlign = "right";

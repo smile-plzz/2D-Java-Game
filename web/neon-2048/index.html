@@ -39,11 +39,16 @@
 
                 <div class="overlay" data-overlay="menu" hidden>
                     <div class="panel">
-                        <p class="panel__eyebrow">Sliding puzzle</p>
+                        <p class="panel__eyebrow" data-field="mode-eyebrow">Classic</p>
                         <h2>Neon 2048</h2>
-                        <p class="panel__lead">
-                            Slide, merge, reach 2048. Every move drops in a new tile.
+                        <p class="panel__lead" data-field="mode-tagline">
+                            The 4x4 original. Slide, merge, and keep a corner for your biggest tile.
                         </p>
+                        <div class="mode-select" role="group" aria-label="Board size">
+                            <button class="mode-pill" data-mode="classic" aria-pressed="true">Classic 4×4</button>
+                            <button class="mode-pill" data-mode="compact" aria-pressed="false">Compact 3×3</button>
+                            <button class="mode-pill" data-mode="grand" aria-pressed="false">Grand 5×5</button>
+                        </div>
                         <button class="button button--primary" data-action="start">Play</button>
                         <dl class="panel__stats">
                             <div><dt>Best</dt><dd data-field="highscore">0</dd></div>
@@ -57,6 +62,7 @@
                         <p class="panel__eyebrow" data-field="result-label">No moves left</p>
                         <h2 data-field="final-score">0</h2>
                         <p class="panel__lead">
+                            Biggest tile <span data-field="final-tile">0</span>.
                             Best <span data-field="final-best">0</span>.
                         </p>
                         <button class="button button--primary" data-action="restart">Play again</button>
@@ -66,6 +72,9 @@
                 <div class="stage__controls">
                     <button class="icon-button" data-action="mute" aria-pressed="false" title="Mute (M)">
                         <span data-field="mute-label">Sound on</span>
+                    </button>
+                    <button class="icon-button" data-action="quality" title="Render quality: auto, high, medium or low">
+                        <span data-field="quality-label">Quality auto</span>
                     </button>
                     <button class="icon-button" data-action="fullscreen" title="Fullscreen">
                         Fullscreen
@@ -93,11 +102,12 @@
                     </ul>
                 </article>
                 <article class="card">
-                    <h3>Scoring</h3>
+                    <h3>Boards</h3>
                     <ul class="keys">
-                        <li>Merging two tiles scores their combined value</li>
-                        <li>A new 2 or 4 tile appears after every move</li>
-                        <li>The run ends when the board is full and nothing can merge</li>
+                        <li><span class="key-word">Classic</span> — 4×4, target <span class="key-word">2048</span></li>
+                        <li><span class="key-word">Compact</span> — 3×3, target <span class="key-word">512</span></li>
+                        <li><span class="key-word">Grand</span> — 5×5, target <span class="key-word">4096</span></li>
+                        <li>Merging scores the combined value; each board keeps its own best</li>
                     </ul>
                 </article>
             </div>

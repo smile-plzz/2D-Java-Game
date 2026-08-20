@@ -2,6 +2,8 @@ import { Game } from "../framework/game.js";
 import { Vector2 } from "../framework/vector2.js";
 import { MathHelper } from "../framework/mathhelper.js";
 import { Keyboard, Keys, Mouse, MouseKeys } from "../framework/input.js";
+import { Quality } from "../framework/quality.js";
+import { SpatialGrid } from "../framework/spatialgrid.js";
 import { Back, Exponential, Quadratic } from "../framework/ease.js";
 import { ParticleSystem } from "./particles.js";
 import { AudioBank } from "./audio.js";
@@ -94,6 +96,21 @@ export class Arena extends Game {
         this.hitFlash = 0;
         this.aim = new Vector2(1, 0);
         this.pointerAimed = false;
+
+        // Broad phase for bullet against enemy, rebuilt each frame.
+        this.enemyGrid = new SpatialGrid(72);
+        // The backdrop grid never changes between resizes, so it is rasterised
+        // once and blitted rather than re-stroked line by line every frame.
+        this.backdrop = null;
+        this.backdropScale = 1;
+        // gatherInput runs every frame; its result is reused rather than
+        // rebuilt so the loop does not allocate a vector and an object a frame.
+        this.moveInput = new Vector2();
+        this.inputState = { move: this.moveInput, aim: this.aim, firing: false, dash: false };
+        // Formatting a number is not free and the score changes far less often
+        // than the HUD is drawn.
+        this.scoreText = "0";
+        this.bestText = "0";
     }
 
     //<editor-fold desc="Framework hooks">
@@ -111,6 +128,8 @@ export class Arena extends Game {
             entity.position.x = MathHelper.clamp(entity.position.x, 0, width);
             entity.position.y = MathHelper.clamp(entity.position.y, 0, height);
         }
+        this.enemyGrid.resize(width, height);
+        this.backdrop = null;
     }
 
     onWindowBlur() {
@@ -186,6 +205,7 @@ export class Arena extends Game {
         this.pointerAimed = false;
         this.modeTimeLeft = MODE_INFO[this.mode].timeLimit;
         this.timedOut = false;
+        this.refreshScoreText();
 
         this.audio.ensureContext();
         this.setState(State.PLAYING);
@@ -214,6 +234,7 @@ export class Arena extends Game {
         if (this.score > this.highScores[this.mode]) {
             this.highScores[this.mode] = this.score;
             Arena.saveHighScore(this.mode, this.score);
+            this.refreshScoreText();
         }
         this.playSound("over");
         this.setState(State.GAME_OVER);
@@ -246,9 +267,16 @@ export class Arena extends Game {
         this.audio.play(name);
     }
 
+    /** Refreshes the formatted HUD strings after the score moves. */
+    refreshScoreText() {
+        this.scoreText = this.score.toLocaleString();
+        this.bestText = Math.max(this.highScore, this.score).toLocaleString();
+    }
+
     addScore(value, position) {
         const gained = Math.round(value * this.multiplier);
         this.score += gained;
+        this.refreshScoreText();
         this.popups.push({
             position: position.copy(),
             text: `+${gained}`,
@@ -369,7 +397,7 @@ export class Arena extends Game {
     gatherInput() {
         this.touch.update();
 
-        const move = new Vector2();
+        const move = this.moveInput.set(0, 0);
         if (Keyboard.anyDown(Keys.W, Keys.UP)) move.y -= 1;
         if (Keyboard.anyDown(Keys.S, Keys.DOWN)) move.y += 1;
         if (Keyboard.anyDown(Keys.A, Keys.LEFT)) move.x -= 1;
@@ -404,7 +432,12 @@ export class Arena extends Game {
             }
         }
 
-        return { move, aim: this.aim, firing, dash };
+        const input = this.inputState;
+        input.move = move;
+        input.aim = this.aim;
+        input.firing = firing;
+        input.dash = dash;
+        return input;
     }
 
     nearestEnemy() {
@@ -462,9 +495,12 @@ export class Arena extends Game {
         const input = this.gatherInput();
         this.player.update(delta, this, input);
 
-        for (const enemy of this.enemies) enemy.update(delta, this);
-        for (const bullet of this.bullets) bullet.update(delta, this);
-        for (const pickup of this.pickups) pickup.update(delta, this);
+        // Indexed loops: enemies can grow mid-iteration when a splitter dies,
+        // and for..of over a growing array is the one case where the iterator
+        // protocol shows up in a profile.
+        for (let i = 0; i < this.enemies.length; i++) this.enemies[i].update(delta, this);
+        for (let i = 0; i < this.bullets.length; i++) this.bullets[i].update(delta, this);
+        for (let i = 0; i < this.pickups.length; i++) this.pickups[i].update(delta, this);
         this.particles.update(delta);
 
         this.separateEnemies();
@@ -483,10 +519,12 @@ export class Arena extends Game {
             popup.position.y -= 34 * delta;
         }
 
-        this.enemies = this.enemies.filter((enemy) => enemy.alive);
-        this.bullets = this.bullets.filter((bullet) => bullet.alive);
-        this.pickups = this.pickups.filter((pickup) => pickup.alive);
-        this.popups = this.popups.filter((popup) => popup.life > 0);
+        // Compact in place. filter() would hand the collector four fresh arrays
+        // every frame for the sake of removing, usually, nothing.
+        compact(this.enemies, isAlive);
+        compact(this.bullets, isAlive);
+        compact(this.pickups, isAlive);
+        compact(this.popups, isLive);
 
         if (this.player.lives <= 0) this.gameOver();
     }
@@ -504,19 +542,30 @@ export class Arena extends Game {
                 const b = enemies[j];
                 if (b.isSpawning()) continue;
 
-                const offset = b.position.subtract(a.position);
+                const offsetX = b.position.x - a.position.x;
+                const offsetY = b.position.y - a.position.y;
                 const minimum = a.radius + b.radius;
-                const distanceSquared = offset.magnitudeSquared();
+                const distanceSquared = offsetX * offsetX + offsetY * offsetY;
                 if (distanceSquared >= minimum * minimum) continue;
 
                 const distance = Math.sqrt(distanceSquared);
-                // Perfectly stacked spawns have no direction to push along.
-                const direction = distance > 0.001
-                    ? offset.divide(distance)
-                    : Vector2.random();
-                const push = direction.multiply((minimum - distance) * 0.5);
-                a.position.subtractSelf(push);
-                b.position.addSelf(push);
+                let directionX;
+                let directionY;
+                if (distance > 0.001) {
+                    directionX = offsetX / distance;
+                    directionY = offsetY / distance;
+                } else {
+                    // Perfectly stacked spawns have no direction to push along.
+                    const angle = Math.random() * Math.PI * 2;
+                    directionX = Math.cos(angle);
+                    directionY = Math.sin(angle);
+                }
+
+                const push = (minimum - distance) * 0.5;
+                a.position.x -= directionX * push;
+                a.position.y -= directionY * push;
+                b.position.x += directionX * push;
+                b.position.y += directionY * push;
             }
         }
     }
@@ -524,15 +573,28 @@ export class Arena extends Game {
     resolveCollisions() {
         const player = this.player;
 
+        // File the enemies into the broad phase once, then ask it which ones
+        // each bullet could possibly be touching. A late wave has enough of
+        // both that the every-bullet-against-every-enemy loop it replaces was
+        // the most expensive thing in the frame.
+        const grid = this.enemyGrid;
+        grid.resize(this.width, this.height);
+        grid.clear();
+        for (const enemy of this.enemies) {
+            if (enemy.alive && !enemy.isSpawning()) grid.insert(enemy);
+        }
+
         for (const bullet of this.bullets) {
             if (!bullet.alive) continue;
 
             if (bullet.fromPlayer) {
-                for (const enemy of this.enemies) {
+                const candidates = grid.query(bullet.position.x, bullet.position.y, bullet.radius);
+                for (let i = 0; i < candidates.length; i++) {
+                    const enemy = candidates[i];
                     if (!enemy.alive || enemy.isSpawning()) continue;
                     if (!bullet.collidesWith(enemy)) continue;
                     bullet.alive = false;
-                    this.particles.cone(bullet.position, bullet.velocity.normalize().negate(),
+                    this.particles.cone(bullet.position, backwards(bullet.velocity),
                         enemy.color, 6, 220, 0.8, 0.25, 1.8);
                     if (enemy.damage(bullet.damage, this)) this.registerKill(enemy);
                     break;
@@ -653,7 +715,20 @@ export class Arena extends Game {
         }
     }
 
-    drawArena(ctx) {
+    /**
+     * Rasterises the static backdrop — the grid and the border — into an
+     * offscreen canvas. Stroking those forty-odd lines every frame was pure
+     * repetition; a blit of the same pixels is one draw call.
+     */
+    buildBackdrop() {
+        const scale = Math.min(window.devicePixelRatio || 1, Quality.maxPixelRatio);
+        const surface = document.createElement("canvas");
+        surface.width = Math.max(1, Math.round(this.width * scale));
+        surface.height = Math.max(1, Math.round(this.height * scale));
+
+        const ctx = surface.getContext("2d");
+        ctx.setTransform(scale, 0, 0, scale, 0, 0);
+
         const spacing = 64;
         ctx.strokeStyle = "rgba(56, 89, 148, 0.16)";
         ctx.lineWidth = 1;
@@ -671,6 +746,17 @@ export class Arena extends Game {
         ctx.strokeStyle = "rgba(94, 234, 212, 0.35)";
         ctx.lineWidth = 2;
         ctx.strokeRect(1, 1, this.width - 2, this.height - 2);
+
+        this.backdrop = surface;
+        this.backdropScale = scale;
+    }
+
+    drawArena(ctx) {
+        if (!this.backdrop || this.backdropScale
+            !== Math.min(window.devicePixelRatio || 1, Quality.maxPixelRatio)) {
+            this.buildBackdrop();
+        }
+        ctx.drawImage(this.backdrop, 0, 0, this.width, this.height);
     }
 
     drawPopups(ctx) {
@@ -692,11 +778,11 @@ export class Arena extends Game {
         ctx.textBaseline = "top";
         ctx.textAlign = "left";
         ctx.fillStyle = "#e2e8f0";
-        ctx.fillText(`SCORE ${this.score.toLocaleString()}`, pad, pad);
+        ctx.fillText(`SCORE ${this.scoreText}`, pad, pad);
 
         ctx.font = "500 12px 'JetBrains Mono', ui-monospace, monospace";
         ctx.fillStyle = "#94a3b8";
-        ctx.fillText(`BEST ${Math.max(this.highScore, this.score).toLocaleString()}`, pad, pad + 22);
+        ctx.fillText(`BEST ${this.bestText}`, pad, pad + 22);
 
         ctx.textAlign = "right";
         ctx.font = "700 15px 'JetBrains Mono', ui-monospace, monospace";
@@ -746,7 +832,7 @@ export class Arena extends Game {
             ctx.font = "800 22px 'JetBrains Mono', ui-monospace, monospace";
             ctx.fillStyle = Palette.pickup;
             ctx.shadowColor = Palette.pickup;
-            ctx.shadowBlur = 16;
+            ctx.shadowBlur = Quality.glow(16);
             ctx.fillText(`x${this.multiplier}`, 0, 0);
             ctx.shadowBlur = 0;
             ctx.restore();
@@ -816,7 +902,7 @@ export class Arena extends Game {
         ctx.font = `800 ${size}px 'JetBrains Mono', ui-monospace, monospace`;
         ctx.fillStyle = "#e2e8f0";
         ctx.shadowColor = Palette.shield;
-        ctx.shadowBlur = 24;
+        ctx.shadowBlur = Quality.glow(24);
         ctx.fillText(this.bannerText, this.width / 2, this.height / 2 - 40 + offset);
         ctx.restore();
     }
@@ -838,6 +924,39 @@ export class Arena extends Game {
     }
     //</editor-fold>
 }
+
+//<editor-fold desc="Frame helpers">
+
+const isAlive = (entity) => entity.alive;
+const isLive = (popup) => popup.life > 0;
+
+/**
+ * Removes everything the predicate rejects, in place and in order.
+ * @returns the same array
+ */
+function compact(items, keep) {
+    let write = 0;
+    for (let read = 0; read < items.length; read++) {
+        const item = items[read];
+        if (!keep(item)) continue;
+        if (write !== read) items[write] = item;
+        write += 1;
+    }
+    items.length = write;
+    return items;
+}
+
+// Impact sparks all point back along the bullet that made them, and only one
+// is ever in flight at a time, so they share one vector.
+const impactDirection = new Vector2();
+
+function backwards(velocity) {
+    const length = velocity.magnitude();
+    if (length === 0) return impactDirection.set(-1, 0);
+    return impactDirection.set(-velocity.x / length, -velocity.y / length);
+}
+
+//</editor-fold>
 
 /** Draws the framework's easing curves; used by the mechanics panel. */
 export function drawEasingPreview(canvas, easing) {

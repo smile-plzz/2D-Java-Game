@@ -102,5 +102,30 @@ export const MathHelper = {
      */
     damp(current, target, smoothing, delta) {
         return MathHelper.lerp(target, current, Math.pow(smoothing, delta));
+    },
+
+    /**
+     * Per frame damping factor for a coefficient quoted per 1/60th of a second,
+     * which is how the games express their friction.
+     *
+     * Only a handful of distinct coefficients exist across a game, and every
+     * entity asking for one within a frame shares the same delta, so the
+     * answers are memoised for the duration of that frame: hundreds of calls
+     * into pow collapse into a handful.
+     */
+    damping(factor, delta) {
+        if (delta !== dampingDelta) {
+            dampingDelta = delta;
+            dampingCache.clear();
+        }
+        let value = dampingCache.get(factor);
+        if (value === undefined) {
+            value = Math.pow(factor, delta * 60);
+            dampingCache.set(factor, value);
+        }
+        return value;
     }
 };
+
+const dampingCache = new Map();
+let dampingDelta = NaN;

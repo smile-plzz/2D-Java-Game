@@ -1,6 +1,7 @@
 import { Game } from "../framework/game.js";
 import { MathHelper } from "../framework/mathhelper.js";
 import { Keyboard, Keys } from "../framework/input.js";
+import { Quality } from "../framework/quality.js";
 import { ParticleSystem } from "../game/particles.js";
 import { AudioBank } from "../game/audio.js";
 
@@ -10,12 +11,39 @@ export const State = {
     GAME_OVER: "gameover"
 };
 
-const HIGH_SCORE_KEY = "neon-2048.highscore";
-const SIZE = 4;
+export const Mode = {
+    CLASSIC: "classic",
+    COMPACT: "compact",
+    GRAND: "grand"
+};
+
+/** Menu copy and per-mode tuning, kept together so a new mode is one entry. */
+export const MODE_INFO = {
+    [Mode.CLASSIC]: {
+        label: "Classic",
+        tagline: "The 4x4 original. Slide, merge, and keep a corner for your biggest tile.",
+        size: 4,
+        target: 2048
+    },
+    [Mode.COMPACT]: {
+        label: "Compact",
+        tagline: "Three by three. Nine cells fill up fast — every move has to earn its place.",
+        size: 3,
+        target: 512
+    },
+    [Mode.GRAND]: {
+        label: "Grand",
+        tagline: "Five by five. Room to breathe, and a long climb to 4096.",
+        size: 5,
+        target: 4096
+    }
+};
+
+const HIGH_SCORE_PREFIX = "neon-2048.highscore.";
 const TILE_COLORS = {
     2: "#94a3b8", 4: "#a3e635", 8: "#4ade80", 16: "#34d399",
     32: "#38bdf8", 64: "#818cf8", 128: "#a78bfa", 256: "#c084fc",
-    512: "#f0abfc", 1024: "#f472b6", 2048: "#fbbf24"
+    512: "#f0abfc", 1024: "#f472b6", 2048: "#fbbf24", 4096: "#fb923c"
 };
 
 /**
@@ -33,11 +61,18 @@ export class Game2048 extends Game {
         this.state = State.MENU;
         this.listeners = new Set();
 
+        this.mode = Mode.CLASSIC;
+        this.highScores = {};
+        for (const mode of Object.keys(MODE_INFO)) {
+            this.highScores[mode] = Game2048.loadHighScore(mode);
+        }
+
         this.grid = [];
+        this.size = MODE_INFO[this.mode].size;
         this.score = 0;
-        this.highScore = Game2048.loadHighScore();
         this.best = 0;
         this.moved = false;
+        this.reached = 0;
 
         this.gridSize = 0;
         this.cell = 0;
@@ -69,13 +104,32 @@ export class Game2048 extends Game {
 
     onResize(width, height) {
         this.gridSize = Math.floor(Math.min(width, height) * 0.86);
-        this.cell = this.gridSize / SIZE;
+        this.cell = this.gridSize / this.size;
         this.gridOffsetX = (width - this.gridSize) / 2;
         this.gridOffsetY = (height - this.gridSize) / 2;
     }
     //</editor-fold>
 
+    get highScore() { return this.highScores[this.mode]; }
+
+    /** Tuning for the mode currently selected. */
+    get rules() { return MODE_INFO[this.mode]; }
+
     //<editor-fold desc="State">
+    /**
+     * Chooses the board the next game is played on. Only takes effect outside
+     * a game; one in progress keeps the board it started with.
+     */
+    setMode(mode) {
+        if (!MODE_INFO[mode] || this.mode === mode) return;
+        if (this.state === State.PLAYING) return;
+        this.mode = mode;
+        // The board is a different shape now, so the layout has to follow.
+        this.size = MODE_INFO[mode].size;
+        this.onResize(this.width, this.height);
+        this.emit();
+    }
+
     onStateChange(listener) {
         this.listeners.add(listener);
         listener(this.state, this.snapshot());
@@ -87,7 +141,16 @@ export class Game2048 extends Game {
     }
 
     snapshot() {
-        return { score: this.score, highScore: this.highScore, best: this.best, muted: this.audio.muted };
+        return {
+            score: this.score,
+            highScore: this.highScore,
+            highScores: this.highScores,
+            mode: this.mode,
+            best: this.best,
+            reached: this.reached,
+            target: this.rules.target,
+            muted: this.audio.muted
+        };
     }
 
     setState(state) {
@@ -96,10 +159,14 @@ export class Game2048 extends Game {
         this.emit();
     }
 
-    startGame() {
-        this.grid = Array.from({ length: SIZE }, () => new Array(SIZE).fill(0));
+    startGame(mode = this.mode) {
+        this.mode = MODE_INFO[mode] ? mode : Mode.CLASSIC;
+        this.size = this.rules.size;
+        this.onResize(this.width, this.height);
+        this.grid = Array.from({ length: this.size }, () => new Array(this.size).fill(0));
         this.score = 0;
         this.best = 0;
+        this.reached = 0;
         this.particles.clear();
         this.addRandomTile();
         this.addRandomTile();
@@ -109,25 +176,25 @@ export class Game2048 extends Game {
     }
 
     gameOver() {
-        if (this.score > this.highScore) {
-            this.highScore = this.score;
-            Game2048.saveHighScore(this.highScore);
+        if (this.score > this.highScores[this.mode]) {
+            this.highScores[this.mode] = this.score;
+            Game2048.saveHighScore(this.mode, this.score);
         }
         this.audio.play("crash");
         this.setState(State.GAME_OVER);
     }
 
-    static loadHighScore() {
+    static loadHighScore(mode) {
         try {
-            return Number(window.localStorage.getItem(HIGH_SCORE_KEY)) || 0;
+            return Number(window.localStorage.getItem(HIGH_SCORE_PREFIX + mode)) || 0;
         } catch (error) {
             return 0;
         }
     }
 
-    static saveHighScore(value) {
+    static saveHighScore(mode, value) {
         try {
-            window.localStorage.setItem(HIGH_SCORE_KEY, String(value));
+            window.localStorage.setItem(HIGH_SCORE_PREFIX + mode, String(value));
         } catch (error) {
             // Losing the high score is not worth breaking the run over.
         }
@@ -137,8 +204,8 @@ export class Game2048 extends Game {
     //<editor-fold desc="Grid logic">
     addRandomTile() {
         const empty = [];
-        for (let y = 0; y < SIZE; y++) {
-            for (let x = 0; x < SIZE; x++) {
+        for (let y = 0; y < this.size; y++) {
+            for (let x = 0; x < this.size; x++) {
                 if (this.grid[y][x] === 0) empty.push({ x, y });
             }
         }
@@ -157,7 +224,9 @@ export class Game2048 extends Game {
                 const merged = values[i] * 2;
                 result.push(merged);
                 gained += merged;
-                if (merged === 2048) this.audio.play("wave");
+                if (merged > this.reached) this.reached = merged;
+                // Hitting the mode's target tile is the moment worth a fanfare.
+                if (merged === this.rules.target) this.audio.play("wave");
                 i++;
             } else {
                 result.push(values[i]);
@@ -176,9 +245,9 @@ export class Game2048 extends Game {
         const horizontal = direction === "left" || direction === "right";
         const reverse = direction === "right" || direction === "down";
 
-        for (let i = 0; i < SIZE; i++) {
+        for (let i = 0; i < this.size; i++) {
             let line = [];
-            for (let j = 0; j < SIZE; j++) {
+            for (let j = 0; j < this.size; j++) {
                 line.push(horizontal ? this.grid[i][j] : this.grid[j][i]);
             }
             if (reverse) line.reverse();
@@ -187,7 +256,7 @@ export class Game2048 extends Game {
             gained += lineGained;
             if (reverse) result.reverse();
 
-            for (let j = 0; j < SIZE; j++) {
+            for (let j = 0; j < this.size; j++) {
                 const value = result[j];
                 const target = horizontal ? this.grid[i][j] : this.grid[j][i];
                 if (target !== value) changed = true;
@@ -208,11 +277,11 @@ export class Game2048 extends Game {
     }
 
     hasMoves() {
-        for (let y = 0; y < SIZE; y++) {
-            for (let x = 0; x < SIZE; x++) {
+        for (let y = 0; y < this.size; y++) {
+            for (let x = 0; x < this.size; x++) {
                 if (this.grid[y][x] === 0) return true;
-                if (x < SIZE - 1 && this.grid[y][x] === this.grid[y][x + 1]) return true;
-                if (y < SIZE - 1 && this.grid[y][x] === this.grid[y + 1][x]) return true;
+                if (x < this.size - 1 && this.grid[y][x] === this.grid[y][x + 1]) return true;
+                if (y < this.size - 1 && this.grid[y][x] === this.grid[y + 1][x]) return true;
             }
         }
         return false;
@@ -262,8 +331,8 @@ export class Game2048 extends Game {
         if (this.grid.length === 0) return;
 
         const pad = this.cell * 0.08;
-        for (let y = 0; y < SIZE; y++) {
-            for (let x = 0; x < SIZE; x++) {
+        for (let y = 0; y < this.size; y++) {
+            for (let x = 0; x < this.size; x++) {
                 const value = this.grid[y][x];
                 const cx = this.gridOffsetX + x * this.cell;
                 const cy = this.gridOffsetY + y * this.cell;
@@ -288,7 +357,7 @@ export class Game2048 extends Game {
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 2;
                 ctx.shadowColor = color;
-                ctx.shadowBlur = 10;
+                ctx.shadowBlur = Quality.glow(10);
                 ctx.stroke();
                 ctx.shadowBlur = 0;
 
@@ -312,6 +381,15 @@ export class Game2048 extends Game {
         ctx.font = "500 12px 'JetBrains Mono', ui-monospace, monospace";
         ctx.fillStyle = "#94a3b8";
         ctx.fillText(`BEST ${Math.max(this.highScore, this.score).toLocaleString()}`, pad, pad + 22);
+
+        ctx.textAlign = "right";
+        ctx.font = "700 15px 'JetBrains Mono', ui-monospace, monospace";
+        ctx.fillStyle = "#e2e8f0";
+        ctx.fillText(`${this.size}×${this.size}`, this.width - pad, pad);
+
+        ctx.font = "500 12px 'JetBrains Mono', ui-monospace, monospace";
+        ctx.fillStyle = this.reached >= this.rules.target ? "#fbbf24" : "#94a3b8";
+        ctx.fillText(`TARGET ${this.rules.target}`, this.width - pad, pad + 22);
     }
     //</editor-fold>
 }
