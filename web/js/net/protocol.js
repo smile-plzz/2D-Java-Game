@@ -12,6 +12,7 @@ export const MessageType = {
     ERROR: "ERROR",
     PING: "PING",
     PONG: "PONG",
+    CHAT: "CHAT",
     REMATCH_REQUEST: "REMATCH_REQUEST",
     REMATCH_ACCEPT: "REMATCH_ACCEPT",
     LEAVE: "LEAVE",
@@ -26,7 +27,13 @@ export const MessageType = {
     PONG_INPUT: "PONG_INPUT",
     PONG_SNAPSHOT: "PONG_SNAPSHOT",
     PONG_EVENT: "PONG_EVENT",
-    PONG_PAUSE: "PONG_PAUSE"
+    PONG_PAUSE: "PONG_PAUSE",
+
+    // Neon Light Cycles
+    CYCLES_START: "CYCLES_START",
+    CYCLES_INPUT: "CYCLES_INPUT",
+    CYCLES_SNAPSHOT: "CYCLES_SNAPSHOT",
+    CYCLES_EVENT: "CYCLES_EVENT"
 };
 
 export const ErrorCode = {

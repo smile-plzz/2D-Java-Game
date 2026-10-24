@@ -2,6 +2,7 @@ import { PongGame, State, MODE_INFO } from "./pong.js";
 import { bindShell, format } from "./shell.js";
 import { MultiplayerSession } from "../net/session.js";
 import { LobbyUI } from "../net/lobby.js";
+import { InGameChat } from "../net/chat.js";
 
 const canvas = document.getElementById("game");
 const stageFrame = document.querySelector(".stage__frame");
@@ -18,6 +19,12 @@ const lobby = new LobbyUI({
     onLeaveMatch: () => {
         game.leaveOnline();
     }
+});
+
+const chat = new InGameChat({
+    stageFrame,
+    session,
+    audio: game.audio
 });
 
 session.onError(({ error }) => {
@@ -78,4 +85,5 @@ game.onStateChange((state, data) => {
 window.game = game;
 window.lobby = lobby;
 window.session = session;
+window.chat = chat;
 game.run();

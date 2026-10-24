@@ -44,3 +44,29 @@
 - Updated `README.md` with "Online play" section documenting hosting, joining, TURN configuration, foreground tab requirements, and pause behavior.
 - Cleaned and confirmed zero em-dashes in any user-facing text.
 - Verified test runner: all unit tests and e2e integration tests pass (`npm test`).
+
+## 2026-10-24 18:45 - Milestone 5: Multiplayer Arena, In-Game Chat, and 2D Library Games Expansion
+- Implemented `web/js/net/chat.js` (`InGameChat`):
+  - Real-time peer messaging over WebRTC data channels during active matches.
+  - Floating auto-fadeout message bubbles (4.5s lifespan, self vs peer styling).
+  - Quick-response emoji reaction chips (`👍`, `🔥`, `⚡`, `😮`, `GG!`, `Nice!`, `Close!`, `Rematch?`).
+  - Text input drawer with send button, Enter key, Esc key, and keyboard event isolation.
+  - Integrated into Connect Four, Neon Pong, and Neon Light Cycles.
+- Built new 2D library game: **Neon Light Cycles** (`web/neon-cycles/`, `web/js/games/cycles.js`, `web/js/games/cycles-main.js`):
+  - Real-time grid combat leveraging Vector2, MathHelper, ease, and particles.
+  - Modes: Classic, Turbo, Arena (barrier pylons).
+  - Solo vs AI with obstacle lookahead avoidance + 2-player P2P online room codes with chat.
+- Built new 2D library game: **Neon Asteroids** (`web/neon-asteroids/`, `web/js/games/asteroids.js`, `web/js/games/asteroids-main.js`):
+  - Newtonian vector space arcade showcasing rotation, forward thrust, inertia drag, and toroidal screen wrapping.
+  - Multi-tier asteroid splitting physics with jagged procedural polygons, particle explosions, floating scores, and screen shake.
+  - Modes: Classic waves, 60s Blitz score attack with combo multipliers, and kinetic Shields mode with twin lasers.
+- Created dedicated **Multiplayer Arena** on homepage (`web/index.html`):
+  - Dedicated `#multiplayer` section with live-pulsing badges and direct links to Connect Four, Neon Pong, and Neon Light Cycles.
+  - Added new game cards to the main games grid (expanding arcade from 6 to 8 games, and 18 to 24 modes).
+- Added visual juice and animation polish in `web/styles.css`:
+  - Modal panel pop entrance keyframes with cubic-bezier spring curves.
+  - Button interactive hover and active scaling states.
+  - Live pulse keyframes on multiplayer badges.
+  - Glowing card hover lift and border transitions.
+- Added comprehensive unit tests in `tests/unit/chat.test.js`, `tests/unit/cycles.test.js`, and `tests/unit/asteroids.test.js`.
+- Verified entire test suite: 100% unit tests and two-context browser E2E tests pass cleanly (`npm test`).

@@ -3,8 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>2D Java Game Arcade — built on the 2D Java Game Framework</title>
-    <meta name="description" content="A small arcade of browser games built on a JavaScript port of the 2D Java Game Framework: a wave shooter, snake, brick breaker, pong, 2048 and connect four. No install required.">
+    <title>2D Java Game Arcade: built on the 2D Java Game Framework</title>
+    <meta name="description" content="A small arcade of browser games built on a JavaScript port of the 2D Java Game Framework: wave shooter, snake, brick breaker, pong, 2048, connect four, light cycles, and asteroids. No install required.">
     <meta name="theme-color" content="#070b14">
 
     <meta property="og:type" content="website">
@@ -15,23 +15,72 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <a class="skip-link" href="#games">Skip to the games</a>
+    <a class="skip-link" href="#multiplayer">Skip to the games</a>
 
     <header class="masthead">
         <div class="masthead__brand">
             <span class="logo" aria-hidden="true"></span>
             <div>
                 <h1>2D Java Game Arcade</h1>
-                <p>Six small games, eighteen modes, one browser port of the 2D Java Game Framework.</p>
+                <p>Eight small games, twenty-four modes, one browser port of the 2D Java Game Framework.</p>
             </div>
         </div>
         <nav class="masthead__links">
+            <a href="#multiplayer">Multiplayer Arena</a>
+            <a href="#games">All games</a>
             <a href="#under-the-hood">Under the hood</a>
             <a href="https://github.com/smile-plzz/2D-Java-Game" rel="noopener">Source</a>
         </nav>
     </header>
 
     <main>
+        <section class="section section--multiplayer" id="multiplayer">
+            <span class="multiplayer-badge">
+                <span class="multiplayer-badge__dot" aria-hidden="true"></span>
+                P2P Room Code · Online
+            </span>
+            <h2>Multiplayer Arena</h2>
+            <p class="section__lead">
+                Play head to head with a friend on two different devices across the internet.
+                One player generates a 6-character room code, the other joins, and game traffic flows directly peer to peer with live in-game peer chat.
+            </p>
+
+            <div class="game-grid game-grid--multiplayer">
+                <a class="game-card game-card--multi game-card--cyan" href="neon-cycles/">
+                    <span class="game-card__badge">Live Chat</span>
+                    <p class="game-card__eyebrow">Grid combat</p>
+                    <h2>Neon Light Cycles</h2>
+                    <p class="game-card__lead">
+                        High-speed tactical light trail dueling. Box in your opponent and force a crash.
+                        Classic, Turbo and Arena modes with solo AI or 2-player online room codes.
+                    </p>
+                    <span class="game-card__play">Play online &rarr;</span>
+                </a>
+
+                <a class="game-card game-card--multi game-card--red" href="neon-pong/">
+                    <span class="game-card__badge">Live Chat</span>
+                    <p class="game-card__eyebrow">Real-time rally</p>
+                    <h2>Neon Pong</h2>
+                    <p class="game-card__lead">
+                        Head to head paddle battle. Host-authoritative physics, client-side paddle prediction,
+                        and interpolated snapshots for silky 60 FPS remote rallies.
+                    </p>
+                    <span class="game-card__play">Play online &rarr;</span>
+                </a>
+
+                <a class="game-card game-card--multi game-card--violet" href="connect-four/">
+                    <span class="game-card__badge">Live Chat</span>
+                    <p class="game-card__eyebrow">Turn-based duel</p>
+                    <h2>Connect Four</h2>
+                    <p class="game-card__lead">
+                        Four in a row wins it. Outsmart your friend in a turn-based tactical drop duel
+                        with move validation, celebratory particle effects, and rematch requests.
+                    </p>
+                    <span class="game-card__play">Play online &rarr;</span>
+                </a>
+            </div>
+        </section>
+
         <section class="section section--flush" id="games">
             <div class="game-grid">
                 <a class="game-card game-card--green" href="vector-arena/">
@@ -68,7 +117,7 @@
                     <p class="game-card__eyebrow">Head to head</p>
                     <h2>Neon Pong</h2>
                     <p class="game-card__lead">
-                        You against the machine.
+                        You against the machine or a remote friend.
                         Classic, short-paddle Blitz, and Multiball with three in play at once.
                     </p>
                     <span class="game-card__play">Play &rarr;</span>
@@ -79,7 +128,7 @@
                     <h2>Neon 2048</h2>
                     <p class="game-card__lead">
                         Slide, merge, reach the target tile.
-                        Three boards: Compact 3×3, the 4×4 Classic, and Grand 5×5.
+                        Three boards: Compact 3x3, the 4x4 Classic, and Grand 5x5.
                     </p>
                     <span class="game-card__play">Play &rarr;</span>
                 </a>
@@ -88,8 +137,28 @@
                     <p class="game-card__eyebrow">Strategy</p>
                     <h2>Connect Four</h2>
                     <p class="game-card__lead">
-                        Four in a row wins it, against a minimax AI.
-                        Casual, Standard and Expert difficulties — up to seven plies deep.
+                        Four in a row wins it: against minimax AI or online 2-player duel.
+                        Casual, Standard and Expert difficulties up to seven plies deep.
+                    </p>
+                    <span class="game-card__play">Play &rarr;</span>
+                </a>
+
+                <a class="game-card game-card--cyan" href="neon-cycles/">
+                    <p class="game-card__eyebrow">Grid combat</p>
+                    <h2>Neon Light Cycles</h2>
+                    <p class="game-card__lead">
+                        High-speed tactical light trail dueling. Box in your opponent and force a crash.
+                        Classic, Turbo and Arena modes against solo AI or 2-player online room codes.
+                    </p>
+                    <span class="game-card__play">Play &rarr;</span>
+                </a>
+
+                <a class="game-card game-card--amber" href="neon-asteroids/">
+                    <p class="game-card__eyebrow">Vector space</p>
+                    <h2>Neon Asteroids</h2>
+                    <p class="game-card__lead">
+                        Newtonian inertia, hyperspace warp, and rock shattering physics.
+                        Classic wave survival, 60s Blitz score attack, and kinetic Shields mode.
                     </p>
                     <span class="game-card__play">Play &rarr;</span>
                 </a>
@@ -99,7 +168,7 @@
         <section class="section" id="under-the-hood">
             <h2>Under the hood</h2>
             <p class="section__lead">
-                Every game here is a subclass of the same <code>Game</code> loop — a JavaScript port of
+                Every game here is a subclass of the same <code>Game</code> loop: a JavaScript port of
                 a 2D game framework originally written in Java. Java no longer runs in browsers, so the
                 framework's core (vector and rectangle math, input polling, easing equations) was ported
                 to ES modules once, and each game is written against that same port.
@@ -122,13 +191,24 @@
                         </tr>
                         <tr>
                             <td><code>framework/input.js</code></td>
-                            <td>Keyboard and mouse polling shared across all six games.</td>
+                            <td>Keyboard and mouse polling shared across all games.</td>
                         </tr>
                         <tr>
                             <td><code>game/particles.js</code>, <code>game/audio.js</code></td>
                             <td>The particle bursts and synthesised sound effects each game reuses. The
                                 pool is held in typed arrays and drawn in batches, so a thousand live
                                 particles cost a few dozen draw calls between them.</td>
+                        </tr>
+                        <tr>
+                            <td><code>net/session.js</code>, <code>net/protocol.js</code></td>
+                            <td>WebRTC data channel peer-to-peer multiplayer networking with dual channels
+                                (ordered reliable for events, unordered unreliable for real-time snapshots),
+                                room code generation, and ICE STUN/TURN fallback configuration.</td>
+                        </tr>
+                        <tr>
+                            <td><code>net/chat.js</code></td>
+                            <td>In-game real-time chat overlay supporting quick emoji chips, floating auto-fade
+                                message bubbles, and full custom keyboard messaging during matches.</td>
                         </tr>
                         <tr>
                             <td><code>framework/quality.js</code></td>
