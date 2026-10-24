@@ -23,6 +23,7 @@ export class LobbyUI {
         this.view = "choice"; // 'choice' | 'create' | 'join'
         this.errorMessage = "";
         this.statusMessage = "";
+        this.matchStarted = false;
 
         this.overlay = null;
         this.hudBadge = null;
@@ -36,7 +37,6 @@ export class LobbyUI {
         // Create Lobby overlay element
         const overlay = document.createElement("div");
         overlay.className = "overlay overlay--lobby";
-        overlay.dataset.overlay = "lobby";
         overlay.hidden = true;
         this.overlay = overlay;
 
@@ -62,8 +62,12 @@ export class LobbyUI {
                 this.overlay.hidden = true;
                 this.hudBadge.hidden = false;
                 this.updateHudBadge(snapshot.pingMs);
-                this.onStartMatch();
+                if (!this.matchStarted) {
+                    this.matchStarted = true;
+                    this.onStartMatch();
+                }
             } else if (state === SessionState.DISCONNECTED) {
+                this.matchStarted = false;
                 this.hudBadge.hidden = true;
             } else if (state === SessionState.WAITING && this.view === "create") {
                 this.render();
@@ -267,6 +271,7 @@ export class LobbyUI {
         const btnClose = overlay.querySelector('[data-lobby-action="close"]');
         if (btnClose) {
             btnClose.onclick = () => {
+                this.matchStarted = false;
                 this.session.leave();
                 this.hide();
                 this.onLeaveMatch();
@@ -276,6 +281,7 @@ export class LobbyUI {
         const btnCancel = overlay.querySelector('[data-lobby-action="cancel"]');
         if (btnCancel) {
             btnCancel.onclick = () => {
+                this.matchStarted = false;
                 this.session.leave();
                 this.view = "choice";
                 this.errorMessage = "";

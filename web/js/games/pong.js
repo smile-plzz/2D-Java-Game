@@ -5,6 +5,7 @@ import { Keyboard, Keys, Mouse } from "../framework/input.js";
 import { Quality } from "../framework/quality.js";
 import { ParticleSystem } from "../game/particles.js";
 import { AudioBank } from "../game/audio.js";
+import { MessageType } from "../net/protocol.js";
 
 export const State = {
     MENU: "menu",
@@ -59,11 +60,10 @@ export const MODE_INFO = {
 const HIGH_SCORE_PREFIX = "neon-pong.highscore.";
 const BALL_RADIUS = 6;
 const PADDLE_MARGIN = 26;
+const INTERPOLATION_DELAY_MS = 90;
 
 /**
- * Neon Pong: player versus a reflex-limited AI. Classic, Blitz and Multiball
- * all run through the same loop; MODE_INFO holds everything that differs.
- * Reuses the same framework port and HUD conventions as the rest of the arcade.
+ * Neon Pong: player versus a reflex-limited AI, or 2-player real-time online multiplayer.
  */
 export class PongGame extends Game {
     constructor(canvas) {
@@ -85,24 +85,33 @@ export class PongGame extends Game {
         this.aiScore = 0;
         this.winner = null;
 
+        // Multiplayer state
+        this.isOnline = false;
+        this.session = null;
+        this.myRole = null; // 'host' or 'guest'
+        this.snapshotTick = 0;
+        this.lastSnapshotSentTime = 0;
+        this.lastInputSentTime = 0;
+        this.snapshotHistory = [];
+
         this.paddleHeight = MODE_INFO[this.mode].paddleHeight;
         this.paddleWidth = 12;
         this.player = { y: 0 };
         this.ai = { y: 0 };
-        // Every mode plays out of the same list; classic simply keeps one in it.
         this.balls = [];
         this.shakeAmount = 0;
 
         this.pointerY = null;
         canvas.addEventListener("pointermove", (event) => {
-            // Mouse holds a cached box for this same canvas, so tracking the
-            // paddle costs no layout work per pointer event.
             const rect = Mouse.getBounds();
             if (!rect || !rect.height) return;
             this.pointerY = ((event.clientY - rect.top) / rect.height) * this.height;
         });
         canvas.addEventListener("pointerdown", () => {
-            if (this.state === State.MENU || this.state === State.GAME_OVER) this.startGame();
+            if (this.state === State.MENU || this.state === State.GAME_OVER) {
+                if (this.isOnline) return;
+                this.startGame();
+            }
         });
     }
 
@@ -117,20 +126,15 @@ export class PongGame extends Game {
 
     onWindowBlur() {
         super.onWindowBlur();
-        if (this.state === State.PLAYING) this.pause();
+        if (!this.isOnline && this.state === State.PLAYING) this.pause();
     }
     //</editor-fold>
 
     get highScore() { return this.highScores[this.mode]; }
 
-    /** Tuning for the mode currently selected. */
     get rules() { return MODE_INFO[this.mode]; }
 
     //<editor-fold desc="State">
-    /**
-     * Chooses the mode the next match starts in. Only takes effect outside a
-     * match; one in progress keeps the mode it started with.
-     */
     setMode(mode) {
         if (!MODE_INFO[mode] || this.mode === mode) return;
         if (this.state === State.PLAYING || this.state === State.PAUSED) return;
@@ -157,7 +161,9 @@ export class PongGame extends Game {
             mode: this.mode,
             target: this.rules.winScore,
             winner: this.winner,
-            muted: this.audio.muted
+            muted: this.audio.muted,
+            isOnline: this.isOnline,
+            myRole: this.myRole
         };
     }
 
@@ -168,6 +174,7 @@ export class PongGame extends Game {
     }
 
     startGame(mode = this.mode) {
+        this.isOnline = false;
         this.mode = MODE_INFO[mode] ? mode : Mode.CLASSIC;
         this.playerScore = 0;
         this.aiScore = 0;
@@ -180,8 +187,6 @@ export class PongGame extends Game {
 
         this.balls.length = 0;
         for (let i = 0; i < this.rules.balls; i++) {
-            // Fan the serves out so a multiball opening does not stack three
-            // balls on the same line.
             this.balls.push(this.serve(Math.random() < 0.5 ? 1 : -1, i / this.rules.balls));
         }
 
@@ -190,7 +195,7 @@ export class PongGame extends Game {
     }
 
     pause() {
-        if (this.state !== State.PLAYING) return;
+        if (this.isOnline || this.state !== State.PLAYING) return;
         this.gameTime.stop();
         this.setState(State.PAUSED);
     }
@@ -203,6 +208,7 @@ export class PongGame extends Game {
     }
 
     togglePause() {
+        if (this.isOnline) return;
         if (this.state === State.PLAYING) this.pause();
         else if (this.state === State.PAUSED) this.resume();
     }
@@ -234,11 +240,140 @@ export class PongGame extends Game {
     }
     //</editor-fold>
 
+    //<editor-fold desc="Multiplayer Online Mode">
+    startOnlineMatch(session) {
+        this.isOnline = true;
+        this.session = session;
+        this.myRole = session.role;
+        this.mode = Mode.CLASSIC;
+        this.playerScore = 0;
+        this.aiScore = 0;
+        this.winner = null;
+        this.paddleHeight = MODE_INFO[Mode.CLASSIC].paddleHeight;
+        this.player.y = (this.height - this.paddleHeight) / 2;
+        this.ai.y = (this.height - this.paddleHeight) / 2;
+        this.particles.clear();
+        this.shakeAmount = 0;
+        this.snapshotHistory = [];
+        this.audio.ensureContext();
+
+        session.onMessage((msg) => this.handleNetworkMessage(msg));
+
+        if (session.isHost) {
+            this.balls.length = 0;
+            this.balls.push(this.serve(Math.random() < 0.5 ? 1 : -1, 0));
+            session.send(MessageType.PONG_START, {
+                winScore: MODE_INFO[Mode.CLASSIC].winScore,
+                paddleHeight: this.paddleHeight
+            });
+            this.setState(State.PLAYING);
+        } else {
+            this.balls = [
+                {
+                    position: new Vector2(this.width / 2, this.height / 2),
+                    velocity: new Vector2(0, 0)
+                }
+            ];
+            this.setState(State.PLAYING);
+        }
+        this.emit();
+    }
+
+    handleNetworkMessage(msg) {
+        if (!this.isOnline) return;
+
+        if (msg.t === MessageType.PONG_START) {
+            this.playerScore = 0;
+            this.aiScore = 0;
+            this.winner = null;
+            this.balls = [
+                {
+                    position: new Vector2(this.width / 2, this.height / 2),
+                    velocity: new Vector2(0, 0)
+                }
+            ];
+            this.setState(State.PLAYING);
+            this.emit();
+            return;
+        }
+
+        if (msg.t === MessageType.PONG_INPUT && this.session && this.session.isHost) {
+            // Host maps guest normalized paddle Y to right paddle
+            const span = Math.max(1, this.height - this.paddleHeight);
+            this.ai.y = MathHelper.clamp(msg.normY * span, 0, span);
+            return;
+        }
+
+        if (msg.t === MessageType.PONG_SNAPSHOT && this.session && this.session.isGuest) {
+            // Guest records snapshot for smooth interpolation
+            this.snapshotHistory.push({
+                time: performance.now(),
+                balls: msg.balls,
+                hostNormY: msg.hostNormY,
+                guestNormY: msg.guestNormY,
+                hostScore: msg.hostScore,
+                guestScore: msg.guestScore
+            });
+
+            // Retain recent snapshots (~1 second)
+            if (this.snapshotHistory.length > 35) {
+                this.snapshotHistory.shift();
+            }
+
+            this.playerScore = msg.hostScore;
+            this.aiScore = msg.guestScore;
+            return;
+        }
+
+        if (msg.t === MessageType.PONG_EVENT) {
+            this.playerScore = msg.hostScore;
+            this.aiScore = msg.guestScore;
+            this.emit();
+
+            if (msg.event === "score") {
+                const iScored = (this.myRole === "host" ? msg.scorer === "host" : msg.scorer === "guest");
+                this.audio.play(iScored ? "eat" : "hurt");
+            } else if (msg.event === "over") {
+                this.finishOnline(msg.winner);
+            }
+            return;
+        }
+
+        if (msg.t === MessageType.REMATCH_REQUEST && this.session && this.session.isHost) {
+            this.startOnlineMatch(this.session);
+        }
+    }
+
+    finishOnline(winner) {
+        this.winner = winner;
+        this.emit();
+        const iWon = (winner === "host" && this.myRole === "host") || (winner === "guest" && this.myRole === "guest");
+        this.audio.play(iWon ? "wave" : "crash");
+        this.setState(State.GAME_OVER);
+    }
+
+    requestRematch() {
+        if (!this.isOnline || !this.session) return;
+        if (this.session.isHost) {
+            this.startOnlineMatch(this.session);
+        } else {
+            this.session.send(MessageType.REMATCH_REQUEST);
+        }
+    }
+
+    leaveOnline() {
+        if (!this.isOnline) return;
+        this.isOnline = false;
+        if (this.session) {
+            this.session.leave();
+            this.session = null;
+        }
+        this.setState(State.MENU);
+        this.emit();
+    }
+    //</editor-fold>
+
     //<editor-fold desc="Ball and scoring">
-    /**
-     * Builds a ball at the centre line heading toward one side.
-     * @param spread 0 to 1, spacing several serves apart vertically
-     */
     serve(direction, spread = 0) {
         const angle = MathHelper.random(-0.35, 0.35)
             + (spread - 0.5) * 0.9
@@ -249,7 +384,6 @@ export class PongGame extends Game {
         };
     }
 
-    /** Puts a ball that has just gone out back into play. */
     respawn(ball, direction) {
         const fresh = this.serve(direction, Math.random());
         ball.position.set(fresh.position.x, fresh.position.y);
@@ -263,12 +397,34 @@ export class PongGame extends Game {
 
         const target = this.rules.winScore;
         if (this.playerScore >= target || this.aiScore >= target) {
-            this.gameOver();
+            if (this.isOnline) {
+                const winner = this.playerScore >= target ? "host" : "guest";
+                this.finishOnline(winner);
+                if (this.session && this.session.isHost) {
+                    this.session.send(MessageType.PONG_EVENT, {
+                        event: "over",
+                        winner,
+                        hostScore: this.playerScore,
+                        guestScore: this.aiScore
+                    });
+                }
+            } else {
+                this.gameOver();
+            }
             return;
         }
+
         this.audio.play(scorer === "player" ? "eat" : "hurt");
-        // The ball that went out is the one served back, so multiball keeps its
-        // full complement without ever gaining one.
+
+        if (this.isOnline && this.session && this.session.isHost) {
+            this.session.send(MessageType.PONG_EVENT, {
+                event: "score",
+                scorer: scorer === "player" ? "host" : "guest",
+                hostScore: this.playerScore,
+                guestScore: this.aiScore
+            });
+        }
+
         this.respawn(ball, scorer === "player" ? -1 : 1);
     }
     //</editor-fold>
@@ -281,10 +437,14 @@ export class PongGame extends Game {
             this.audio.toggleMute();
             this.emit();
         }
-        if (Keyboard.keyDownOnce(Keys.P) || Keyboard.keyDownOnce(Keys.ESCAPE)) this.togglePause();
+        if (Keyboard.keyDownOnce(Keys.P) || Keyboard.keyDownOnce(Keys.ESCAPE)) {
+            this.togglePause();
+        }
 
         if (this.state === State.MENU || this.state === State.GAME_OVER) {
-            if (Keyboard.keyDownOnce(Keys.ENTER) || Keyboard.keyDownOnce(Keys.R)) this.startGame();
+            if (!this.isOnline && (Keyboard.keyDownOnce(Keys.ENTER) || Keyboard.keyDownOnce(Keys.R))) {
+                this.startGame();
+            }
         }
 
         this.shakeAmount = Math.max(0, this.shakeAmount - delta * 40);
@@ -294,30 +454,131 @@ export class PongGame extends Game {
             return;
         }
 
+        if (this.isOnline) {
+            this.updateOnline(delta);
+        } else {
+            this.updateSinglePlayer(delta);
+        }
+
+        this.particles.update(delta);
+    }
+
+    updateSinglePlayer(delta) {
         this.movePlayer(delta);
         this.moveAi(delta);
         for (const ball of this.balls) {
             this.updateBall(ball, delta);
-            // A point may have ended the match mid-list; stop simulating then.
             if (this.state !== State.PLAYING) break;
         }
-        this.particles.update(delta);
+    }
+
+    updateOnline(delta) {
+        if (this.session && this.session.isHost) {
+            // Host simulates physics authoritatively
+            this.movePlayer(delta); // Moves host left paddle
+            for (const ball of this.balls) {
+                this.updateBall(ball, delta);
+                if (this.state !== State.PLAYING) break;
+            }
+
+            // Broadcast snapshot at ~30 Hz
+            const now = performance.now();
+            if (now - this.lastSnapshotSentTime >= 33) {
+                this.lastSnapshotSentTime = now;
+                const span = Math.max(1, this.height - this.paddleHeight);
+                this.session.sendUnreliable(MessageType.PONG_SNAPSHOT, {
+                    tick: ++this.snapshotTick,
+                    balls: this.balls.map((b) => ({
+                        normX: b.position.x / this.width,
+                        normY: b.position.y / this.height,
+                        vx: b.velocity.x,
+                        vy: b.velocity.y
+                    })),
+                    hostNormY: this.player.y / span,
+                    guestNormY: this.ai.y / span,
+                    hostScore: this.playerScore,
+                    guestScore: this.aiScore
+                });
+            }
+        } else if (this.session && this.session.isGuest) {
+            // Guest moves its own paddle (right side) with client-side prediction
+            this.movePlayer(delta);
+
+            // Send paddle input to host at ~60 Hz
+            const now = performance.now();
+            if (now - this.lastInputSentTime >= 16) {
+                this.lastInputSentTime = now;
+                const span = Math.max(1, this.height - this.paddleHeight);
+                this.session.sendUnreliable(MessageType.PONG_INPUT, {
+                    normY: this.ai.y / span
+                });
+            }
+
+            // Interpolate host paddle and balls from snapshots
+            this.interpolateGuestState();
+        }
+    }
+
+    interpolateGuestState() {
+        if (this.snapshotHistory.length === 0) return;
+
+        const span = Math.max(1, this.height - this.paddleHeight);
+        const renderTime = performance.now() - INTERPOLATION_DELAY_MS;
+
+        // Find surrounding snapshots
+        let s0 = null;
+        let s1 = null;
+
+        for (let i = this.snapshotHistory.length - 1; i >= 0; i--) {
+            const snap = this.snapshotHistory[i];
+            if (snap.time <= renderTime) {
+                s0 = snap;
+                s1 = this.snapshotHistory[i + 1] || snap;
+                break;
+            }
+        }
+
+        if (!s0) {
+            s0 = this.snapshotHistory[0];
+            s1 = this.snapshotHistory[1] || s0;
+        }
+
+        const timeSpan = s1.time - s0.time;
+        const alpha = timeSpan > 0 ? MathHelper.clamp((renderTime - s0.time) / timeSpan, 0, 1) : 0;
+
+        // Interpolate host paddle (left)
+        this.player.y = MathHelper.lerp(s0.hostNormY, s1.hostNormY, alpha) * span;
+
+        // Interpolate balls
+        for (let i = 0; i < s0.balls.length; i++) {
+            if (!this.balls[i]) {
+                this.balls[i] = {
+                    position: new Vector2(0, 0),
+                    velocity: new Vector2(0, 0)
+                };
+            }
+            const b0 = s0.balls[i];
+            const b1 = s1.balls[i] || b0;
+            this.balls[i].position.x = MathHelper.lerp(b0.normX, b1.normX, alpha) * this.width;
+            this.balls[i].position.y = MathHelper.lerp(b0.normY, b1.normY, alpha) * this.height;
+            this.balls[i].velocity.x = b1.vx;
+            this.balls[i].velocity.y = b1.vy;
+        }
     }
 
     movePlayer(delta) {
         const speed = 620;
+        const targetPaddle = (this.isOnline && this.myRole === "guest") ? this.ai : this.player;
+
         if (this.pointerY !== null) {
-            this.player.y = MathHelper.clamp(this.pointerY - this.paddleHeight / 2, 0, this.height - this.paddleHeight);
+            targetPaddle.y = MathHelper.clamp(this.pointerY - this.paddleHeight / 2, 0, this.height - this.paddleHeight);
         }
-        if (Keyboard.anyDown(Keys.W, Keys.UP)) this.player.y -= speed * delta;
-        if (Keyboard.anyDown(Keys.S, Keys.DOWN)) this.player.y += speed * delta;
-        this.player.y = MathHelper.clamp(this.player.y, 0, this.height - this.paddleHeight);
+        if (Keyboard.anyDown(Keys.W, Keys.UP)) targetPaddle.y -= speed * delta;
+        if (Keyboard.anyDown(Keys.S, Keys.DOWN)) targetPaddle.y += speed * delta;
+        targetPaddle.y = MathHelper.clamp(targetPaddle.y, 0, this.height - this.paddleHeight);
     }
 
     moveAi(delta) {
-        // Deliberately slower than the player and aimed at a slightly stale
-        // target, so it is beatable without being trivial. With several balls
-        // in play it tracks whichever one is arriving first.
         const speed = this.rules.aiSpeed;
         const threat = this.threateningBall();
         if (!threat) return;
@@ -328,12 +589,10 @@ export class PongGame extends Game {
         this.ai.y = MathHelper.clamp(this.ai.y, 0, this.height - this.paddleHeight);
     }
 
-    /** The incoming ball closest to the AI's own goal, or the nearest of any. */
     threateningBall() {
         let best = null;
         let bestDistance = Infinity;
         for (const ball of this.balls) {
-            // An outgoing ball is not a threat while an incoming one exists.
             const distance = (this.width - ball.position.x)
                 + (ball.velocity.x > 0 ? 0 : this.width);
             if (distance < bestDistance) {
@@ -433,7 +692,6 @@ export class PongGame extends Game {
     }
 
     drawBalls(ctx) {
-        // The balls share every piece of state, so they share one path too.
         ctx.beginPath();
         for (const ball of this.balls) {
             ctx.moveTo(ball.position.x + BALL_RADIUS, ball.position.y);
@@ -462,8 +720,13 @@ export class PongGame extends Game {
         ctx.font = "500 11px 'JetBrains Mono', ui-monospace, monospace";
         ctx.fillStyle = "#94a3b8";
         ctx.textAlign = "center";
-        ctx.fillText(`${this.rules.label.toUpperCase()} · FIRST TO ${this.rules.winScore}`,
-            this.width / 2, 56);
+
+        if (this.isOnline) {
+            const roleIndicator = this.myRole === "host" ? "YOU: GREEN (LEFT) · OPPONENT: RED (RIGHT)" : "YOU: RED (RIGHT) · OPPONENT: GREEN (LEFT)";
+            ctx.fillText(`ONLINE MATCH · ${roleIndicator} · FIRST TO ${this.rules.winScore}`, this.width / 2, 56);
+        } else {
+            ctx.fillText(`${this.rules.label.toUpperCase()} · FIRST TO ${this.rules.winScore}`, this.width / 2, 56);
+        }
     }
     //</editor-fold>
 }

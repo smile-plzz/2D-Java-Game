@@ -130,6 +130,14 @@ export class MultiplayerSession {
         this.emitState();
     }
 
+    get isHost() {
+        return this.role === Role.HOST;
+    }
+
+    get isGuest() {
+        return this.role === Role.GUEST;
+    }
+
     getSnapshot() {
         return {
             state: this.state,
@@ -289,7 +297,7 @@ export class MultiplayerSession {
                 // Connect to host on primary reliable data channel
                 const conn = this.peer.connect(targetPeerId, {
                     reliable: true,
-                    serialization: "none"
+                    serialization: "raw"
                 });
                 this.reliableConn = conn;
                 this.bindDataChannel(conn, true);
@@ -306,7 +314,7 @@ export class MultiplayerSession {
                         const unreli = this.peer.connect(targetPeerId, {
                             label: "unreliable",
                             reliable: false,
-                            serialization: "none"
+                            serialization: "raw"
                         });
                         this.unreliableConn = unreli;
                         this.bindDataChannel(unreli, false);

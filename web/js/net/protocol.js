@@ -74,10 +74,21 @@ export function encodeMessage(type, payload = {}) {
  * @returns {{ ok: boolean, message?: object, error?: string, code?: string }}
  */
 export function decodeMessage(raw) {
-    let obj = raw;
-    if (typeof raw === "string") {
+    let text = raw;
+    if (typeof raw !== "string" && raw) {
+        if (raw instanceof ArrayBuffer || ArrayBuffer.isView(raw)) {
+            try {
+                text = new TextDecoder().decode(raw);
+            } catch (e) {
+                return { ok: false, error: "Failed to decode binary message", code: "PARSE_ERROR" };
+            }
+        }
+    }
+
+    let obj = text;
+    if (typeof text === "string") {
         try {
-            obj = JSON.parse(raw);
+            obj = JSON.parse(text);
         } catch (e) {
             return { ok: false, error: "Invalid JSON format", code: "PARSE_ERROR" };
         }

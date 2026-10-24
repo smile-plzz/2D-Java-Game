@@ -25,3 +25,14 @@
   - In-game HUD reflects turn status ("YOUR TURN" / "OPPONENT'S TURN") and roles ("YOU: GREEN" / "YOU: RED").
   - Rematch flow requests/resets without modifying local single-player high scores.
 - Created and passed test suite `tests/unit/connectfour_net.test.js`.
+
+## 2026-10-24 17:55 - Milestone 3: Neon Pong Real-Time Multiplayer Complete
+- Wired `MultiplayerSession` and `LobbyUI` into `web/neon-pong/index.html` and `web/js/games/pong-main.js`.
+- Implemented host-authoritative real-time netcode:
+  - Host runs authoritative simulation (ball physics, wall/paddle collision, score tracking) at full tick rate.
+  - Guest paddle moves locally with client prediction and broadcasts normalized position (~60 Hz) to host.
+  - Host streams state snapshots (~30 Hz) over unordered/unreliable data channel (`reliable: false`).
+  - Guest implements snapshot history buffer and interpolates host paddle and balls (~90ms render delay) for jitter-free 60fps visuals.
+  - Normalized coordinates ensure resolution and aspect-ratio independence across mobile and desktop displays.
+  - Pause disabled during live online matches to guarantee synchronization.
+- Created and verified unit test suite `tests/unit/pong_net.test.js`.
