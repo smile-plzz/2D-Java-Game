@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test:unit": "node unit/protocol.test.js && node unit/connectfour_net.test.js && node unit/pong_net.test.js",
+    "test:unit": "node unit/protocol.test.js && node unit/connectfour_net.test.js && node unit/pong_net.test.js && node unit/chat.test.js && node unit/cycles.test.js && node unit/asteroids.test.js",
     "test:e2e": "node e2e/connectfour_two_context.test.js && node e2e/pong_two_context.test.js",
     "test": "npm run test:unit && npm run test:e2e"
   },

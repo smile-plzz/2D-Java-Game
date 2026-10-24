@@ -470,6 +470,35 @@ export class MultiplayerSession {
             this.pingTimer = null;
         }
     }
+
+    /**
+     * Broadcasts a chat message to the remote peer.
+     * @param {string} text
+     * @returns {boolean}
+     */
+    sendChat(text) {
+        if (!text || typeof text !== "string") return false;
+        const clean = text.trim().slice(0, 140);
+        if (!clean) return false;
+        return this.send(MessageType.CHAT, {
+            text: clean,
+            sender: this.role,
+            ts: Date.now()
+        });
+    }
+
+    /**
+     * Registers a listener for chat messages.
+     * @param {(msg: {text: string, sender: string, ts: number}) => void} callback
+     * @returns {() => void} Unsubscribe function
+     */
+    onChat(callback) {
+        return this.onMessage((msg) => {
+            if (msg.t === MessageType.CHAT) {
+                callback(msg);
+            }
+        });
+    }
     //</editor-fold>
 
     //<editor-fold desc="Teardown">

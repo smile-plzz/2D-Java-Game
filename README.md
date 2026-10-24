@@ -4,7 +4,7 @@ A collection of classes used for 2d game programming in Java. Much of the dirty 
 
 ## Play it in the browser
 
-`web/` holds a small arcade of six games, plus a browser port of this framework's
+`web/` holds a small arcade of eight games, plus a browser port of this framework's
 core that they are all written against. It is a static site: no build step, no
 dependencies, no server code.
 
@@ -16,6 +16,8 @@ dependencies, no server code.
 | **Neon Pong** - head to head | Classic · Blitz · Multiball · Online 2-Player |
 | **Neon 2048** - sliding puzzle | Compact 3×3 · Classic 4×4 · Grand 5×5 |
 | **Connect Four** - minimax AI | Casual · Standard · Expert · Online 2-Player |
+| **Neon Light Cycles** - grid combat | Classic · Turbo · Arena · Online 2-Player |
+| **Neon Asteroids** - vector space | Classic · Blitz · Shields |
 
 Each mode keeps its own high score. A mode is one entry in that game's
 `MODE_INFO` table: the tuning it changes and the menu copy describing it live
@@ -54,12 +56,16 @@ vercel --prod # production deployment
 If you would rather not use `vercel.json`, delete it and set **Root Directory**
 to `web` in the project settings instead: the two approaches are equivalent.
 
+### Dedicated Multiplayer Arena
+
+The arcade homepage features a dedicated **Multiplayer Arena** highlighting all online titles. Players can launch private rooms, invite friends via 6-character room codes or direct links, and chat live in-game.
+
 ### Online play
 
-Connect Four and Neon Pong feature peer-to-peer 2-player online multiplayer via WebRTC data channels. No server, accounts, or registration required.
+Connect Four, Neon Pong, and Neon Light Cycles feature peer-to-peer 2-player online multiplayer via WebRTC data channels. No server, accounts, or registration required.
 
 #### How to host
-1. On Connect Four or Neon Pong, click **Play online** from the start menu.
+1. On any multiplayer game, click **Play online** from the start menu.
 2. Click **Create Room**. A 6-character room code will be generated (e.g. `K9X2MW`).
 3. Click **Copy Code** or **Copy Link** to share the room code or direct link with your friend.
 4. Keep the tab open and in the foreground. Once your opponent connects, the match begins automatically.
@@ -68,6 +74,13 @@ Connect Four and Neon Pong feature peer-to-peer 2-player online multiplayer via 
 1. Click **Play online** from the game menu, then **Join Room** (or open the shared link).
 2. Enter the 6-character room code.
 3. Click **Join Match**.
+
+#### In-game peer chat
+While connected in an online room, players can chat in real time:
+- Click the **💬 Chat** button in the bottom-left corner to open the chat drawer.
+- Tap quick reaction chips (`👍`, `🔥`, `⚡`, `😮`, `GG!`, `Nice!`, `Close!`, `Rematch?`) for instant responses.
+- Or type any custom message up to 140 characters and press `Enter` or **Send**.
+- Floating chat bubbles appear above the action with automatic fadeout. Keypresses inside the chat drawer do not affect game movement.
 
 #### Networking and TURN relays
 - **Direct P2P**: Game traffic flows directly between the two browsers over WebRTC data channels. Initial connection handshakes are brokered by PeerJS's public cloud.
