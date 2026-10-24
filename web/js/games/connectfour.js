@@ -4,6 +4,12 @@ import { Keyboard, Keys, Mouse } from "../framework/input.js";
 import { Quality } from "../framework/quality.js";
 import { ParticleSystem } from "../game/particles.js";
 import { AudioBank } from "../game/audio.js";
+import {
+    MessageType,
+    validateC4Move,
+    checkC4Win,
+    isC4BoardFull
+} from "../net/protocol.js";
 
 export const State = {
     MENU: "menu",
@@ -53,9 +59,8 @@ const PLAYER = 1;
 const AI = 2;
 
 /**
- * Neon Connect Four: player versus a minimax AI with alpha-beta pruning.
- * Turn based, like Neon 2048 — update() only reacts to input and the AI's
- * thinking timer, everything else is a redraw of the current board.
+ * Neon Connect Four: player versus a minimax AI with alpha-beta pruning,
+ * or 2-player peer-to-peer online multiplayer.
  */
 export class ConnectFourGame extends Game {
     constructor(canvas) {
@@ -72,6 +77,12 @@ export class ConnectFourGame extends Game {
         this.winner = null;
         this.aiTimer = 0;
         this.hoverColumn = 3;
+
+        // Multiplayer state
+        this.isOnline = false;
+        this.session = null;
+        this.myRole = null; // 1 = host, 2 = guest
+        this.rematchRequested = false;
 
         this.mode = Mode.STANDARD;
         this.bestStreaks = {};
@@ -93,12 +104,22 @@ export class ConnectFourGame extends Game {
             const x = ((event.clientX - rect.left) / rect.width) * this.width;
             this.hoverColumn = MathHelper.clamp(Math.floor((x - this.offsetX) / this.cell), 0, COLS - 1);
         });
+
         canvas.addEventListener("pointerdown", () => {
             if (this.state === State.MENU || this.state === State.GAME_OVER) {
+                if (this.isOnline) return;
                 this.startGame();
                 return;
             }
-            if (this.state === State.PLAYING && this.turn === PLAYER) this.dropDisc(this.hoverColumn);
+            if (this.state === State.PLAYING) {
+                if (this.isOnline) {
+                    if (this.turn === this.myRole) {
+                        this.handlePlayerMove(this.hoverColumn);
+                    }
+                } else if (this.turn === PLAYER) {
+                    this.dropDisc(this.hoverColumn);
+                }
+            }
         });
     }
 
@@ -132,7 +153,10 @@ export class ConnectFourGame extends Game {
             highScores: this.bestStreaks,
             mode: this.mode,
             winner: this.winner,
-            muted: this.audio.muted
+            muted: this.audio.muted,
+            isOnline: this.isOnline,
+            myRole: this.myRole,
+            turn: this.turn
         };
     }
 
@@ -159,6 +183,7 @@ export class ConnectFourGame extends Game {
     }
 
     startGame(mode = this.mode) {
+        this.isOnline = false;
         this.mode = MODE_INFO[mode] ? mode : Mode.STANDARD;
         this.board = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
         this.turn = PLAYER;
@@ -200,6 +225,182 @@ export class ConnectFourGame extends Game {
         } catch (error) {
             // Losing the streak is not worth breaking the run over.
         }
+    }
+    //</editor-fold>
+
+    //<editor-fold desc="Multiplayer Online Mode">
+    startOnlineMatch(session) {
+        this.isOnline = true;
+        this.session = session;
+        this.myRole = session.role === "host" ? 1 : 2;
+        this.rematchRequested = false;
+        this.board = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+        this.winner = null;
+        this.particles.clear();
+        this.audio.ensureContext();
+
+        session.onMessage((msg) => this.handleNetworkMessage(msg));
+
+        if (session.isHost) {
+            // Host randomly picks who goes first
+            this.turn = Math.random() < 0.5 ? 1 : 2;
+            session.send(MessageType.C4_START, { firstTurn: this.turn });
+            this.setState(State.PLAYING);
+        } else {
+            this.setState(State.PLAYING);
+        }
+        this.emit();
+    }
+
+    handleNetworkMessage(msg) {
+        if (!this.isOnline) return;
+
+        if (msg.t === MessageType.C4_START) {
+            this.board = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+            this.winner = null;
+            this.turn = msg.firstTurn;
+            this.setState(State.PLAYING);
+            this.emit();
+            return;
+        }
+
+        if (msg.t === MessageType.C4_MOVE && this.session && this.session.isHost) {
+            // Host receives move from guest (role 2)
+            const validation = validateC4Move(this.board, msg.col, 2, this.turn, this.winner);
+            if (!validation.valid) return;
+
+            const row = this.executeMove(msg.col, 2);
+            if (row === -1) return;
+
+            if (checkC4Win(this.board, 2)) {
+                this.finishOnline("guest");
+            } else if (isC4BoardFull(this.board)) {
+                this.finishOnline("draw");
+            } else {
+                this.turn = 1;
+            }
+
+            this.session.send(MessageType.C4_STATE, {
+                board: this.board,
+                lastMove: { col: msg.col, row, piece: 2 },
+                turn: this.turn,
+                winner: this.winner
+            });
+            this.emit();
+            return;
+        }
+
+        if (msg.t === MessageType.C4_STATE && this.session && this.session.isGuest) {
+            // Guest receives authoritative state from host
+            this.board = msg.board;
+            if (msg.lastMove) {
+                this.playMoveEffect(msg.lastMove.row, msg.lastMove.col, msg.lastMove.piece);
+            }
+            this.turn = msg.turn;
+            if (msg.winner) {
+                this.finishOnline(msg.winner);
+            }
+            this.emit();
+            return;
+        }
+
+        if (msg.t === MessageType.REMATCH_REQUEST) {
+            if (this.session && this.session.isHost) {
+                // Opponent requested rematch: start new game and broadcast start
+                this.board = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+                this.winner = null;
+                this.turn = Math.random() < 0.5 ? 1 : 2;
+                this.session.send(MessageType.C4_START, { firstTurn: this.turn });
+                this.setState(State.PLAYING);
+                this.emit();
+            }
+        }
+    }
+
+    handlePlayerMove(col) {
+        if (!this.isOnline || this.state !== State.PLAYING || this.winner !== null) return;
+        if (this.turn !== this.myRole) return;
+
+        if (this.session && this.session.isHost) {
+            const validation = validateC4Move(this.board, col, 1, this.turn, this.winner);
+            if (!validation.valid) return;
+
+            const row = this.executeMove(col, 1);
+            if (row === -1) return;
+
+            if (checkC4Win(this.board, 1)) {
+                this.finishOnline("host");
+            } else if (isC4BoardFull(this.board)) {
+                this.finishOnline("draw");
+            } else {
+                this.turn = 2;
+            }
+
+            this.session.send(MessageType.C4_STATE, {
+                board: this.board,
+                lastMove: { col, row, piece: 1 },
+                turn: this.turn,
+                winner: this.winner
+            });
+            this.emit();
+        } else if (this.session && this.session.isGuest) {
+            // Guest sends move to host for authoritative validation
+            if (this.nextOpenRow(this.board, col) === -1) return;
+            this.session.send(MessageType.C4_MOVE, { col });
+        }
+    }
+
+    executeMove(col, piece) {
+        const row = this.nextOpenRow(this.board, col);
+        if (row === -1) return -1;
+        this.board[row][col] = piece;
+        this.playMoveEffect(row, col, piece);
+        return row;
+    }
+
+    playMoveEffect(row, col, piece) {
+        this.audio.play("paddle");
+        this.particles.burst(
+            this.cellCenter(row, col),
+            piece === 1 ? "#4ade80" : "#f43f5e",
+            12,
+            160,
+            0.4,
+            1.6
+        );
+    }
+
+    finishOnline(winner) {
+        this.winner = winner;
+        this.emit();
+        const iWon = (winner === "host" && this.myRole === 1) || (winner === "guest" && this.myRole === 2);
+        this.audio.play(iWon ? "wave" : winner === "draw" ? "pop" : "crash");
+        this.setState(State.GAME_OVER);
+    }
+
+    requestRematch() {
+        if (!this.isOnline || !this.session) return;
+        if (this.session.isHost) {
+            this.board = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+            this.winner = null;
+            this.turn = Math.random() < 0.5 ? 1 : 2;
+            this.session.send(MessageType.C4_START, { firstTurn: this.turn });
+            this.setState(State.PLAYING);
+            this.emit();
+        } else {
+            this.session.send(MessageType.REMATCH_REQUEST);
+        }
+    }
+
+    leaveOnline() {
+        if (!this.isOnline) return;
+        this.isOnline = false;
+        if (this.session) {
+            this.session.leave();
+            this.session = null;
+        }
+        this.setState(State.MENU);
+        this.emit();
     }
     //</editor-fold>
 
@@ -254,23 +455,7 @@ export class ConnectFourGame extends Game {
     isFull(board) { return this.validColumns(board).length === 0; }
 
     checkWin(board, piece) {
-        for (let row = 0; row < ROWS; row++) {
-            for (let col = 0; col < COLS; col++) {
-                if (col + 3 < COLS
-                    && board[row][col] === piece && board[row][col + 1] === piece
-                    && board[row][col + 2] === piece && board[row][col + 3] === piece) return true;
-                if (row + 3 < ROWS
-                    && board[row][col] === piece && board[row + 1][col] === piece
-                    && board[row + 2][col] === piece && board[row + 3][col] === piece) return true;
-                if (col + 3 < COLS && row + 3 < ROWS
-                    && board[row][col] === piece && board[row + 1][col + 1] === piece
-                    && board[row + 2][col + 2] === piece && board[row + 3][col + 3] === piece) return true;
-                if (col + 3 < COLS && row - 3 >= 0
-                    && board[row][col] === piece && board[row - 1][col + 1] === piece
-                    && board[row - 2][col + 2] === piece && board[row - 3][col + 3] === piece) return true;
-            }
-        }
-        return false;
+        return checkC4Win(board, piece);
     }
     //</editor-fold>
 
@@ -367,8 +552,6 @@ export class ConnectFourGame extends Game {
         const [column] = this.minimax(this.board, rules.depth, -Infinity, Infinity, true);
         let choice = column;
 
-        // The easier modes occasionally pass on their own best answer, which
-        // reads as a beatable opponent rather than a broken one.
         if (rules.blunderChance > 0 && Math.random() < rules.blunderChance) {
             const alternatives = this.validColumns(this.board).filter((col) => col !== column);
             if (alternatives.length > 0) {
@@ -389,7 +572,9 @@ export class ConnectFourGame extends Game {
             this.emit();
         }
         if (this.state === State.MENU || this.state === State.GAME_OVER) {
-            if (Keyboard.keyDownOnce(Keys.ENTER) || Keyboard.keyDownOnce(Keys.R)) this.startGame();
+            if (!this.isOnline && (Keyboard.keyDownOnce(Keys.ENTER) || Keyboard.keyDownOnce(Keys.R))) {
+                this.startGame();
+            }
         }
 
         if (this.state !== State.PLAYING) {
@@ -397,10 +582,10 @@ export class ConnectFourGame extends Game {
             return;
         }
 
-        if (this.turn === AI) {
+        if (!this.isOnline && this.turn === AI) {
             this.aiTimer -= delta;
             if (this.aiTimer <= 0) this.playAiMove();
-        } else {
+        } else if (this.isOnline ? (this.turn === this.myRole) : (this.turn === PLAYER)) {
             if (Keyboard.keyDownOnce(Keys.LEFT) || Keyboard.keyDownOnce(Keys.A)) {
                 this.hoverColumn = Math.max(0, this.hoverColumn - 1);
             }
@@ -408,7 +593,11 @@ export class ConnectFourGame extends Game {
                 this.hoverColumn = Math.min(COLS - 1, this.hoverColumn + 1);
             }
             if (Keyboard.keyDownOnce(Keys.SPACE) || Keyboard.keyDownOnce(Keys.ENTER)) {
-                this.dropDisc(this.hoverColumn);
+                if (this.isOnline) {
+                    this.handlePlayerMove(this.hoverColumn);
+                } else {
+                    this.dropDisc(this.hoverColumn);
+                }
             }
         }
 
@@ -419,7 +608,8 @@ export class ConnectFourGame extends Game {
     //<editor-fold desc="Draw">
     draw(ctx) {
         this.drawFrame(ctx);
-        if (this.state === State.PLAYING && this.turn === PLAYER) this.drawHoverMarker(ctx);
+        const shouldDrawHover = this.state === State.PLAYING && (this.isOnline ? this.turn === this.myRole : this.turn === PLAYER);
+        if (shouldDrawHover) this.drawHoverMarker(ctx);
         if (this.board.length > 0) this.drawBoard(ctx);
         this.particles.draw(ctx);
         if (this.state !== State.MENU) this.drawHud(ctx);
@@ -443,7 +633,10 @@ export class ConnectFourGame extends Game {
         const y = this.offsetY - this.cell * 0.3;
         ctx.beginPath();
         ctx.arc(x, y, this.cell * 0.18, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(74, 222, 128, 0.5)";
+        const color = this.isOnline
+            ? (this.myRole === 1 ? "rgba(74, 222, 128, 0.5)" : "rgba(244, 63, 94, 0.5)")
+            : "rgba(74, 222, 128, 0.5)";
+        ctx.fillStyle = color;
         ctx.fill();
     }
 
@@ -462,7 +655,7 @@ export class ConnectFourGame extends Game {
                     ctx.stroke();
                     continue;
                 }
-                const color = piece === PLAYER ? "#4ade80" : "#f43f5e";
+                const color = piece === 1 ? "#4ade80" : "#f43f5e";
                 ctx.fillStyle = color;
                 ctx.globalAlpha = 0.22;
                 ctx.fill();
@@ -483,17 +676,33 @@ export class ConnectFourGame extends Game {
         ctx.textAlign = "left";
         ctx.font = "700 15px 'JetBrains Mono', ui-monospace, monospace";
         ctx.fillStyle = "#e2e8f0";
-        ctx.fillText(`WIN STREAK ${this.winStreak}`, pad, pad);
 
-        ctx.font = "500 12px 'JetBrains Mono', ui-monospace, monospace";
-        ctx.fillStyle = "#94a3b8";
-        ctx.fillText(`BEST ${this.bestStreak} · ${this.rules.label.toUpperCase()}`, pad, pad + 22);
+        if (this.isOnline) {
+            ctx.fillText("ONLINE MATCH", pad, pad);
+            ctx.font = "500 12px 'JetBrains Mono', ui-monospace, monospace";
+            ctx.fillStyle = "#94a3b8";
+            const roleText = this.myRole === 1 ? "YOU: GREEN · OPPONENT: RED" : "YOU: RED · OPPONENT: GREEN";
+            ctx.fillText(roleText, pad, pad + 22);
 
-        if (this.state === State.PLAYING) {
-            ctx.textAlign = "right";
-            ctx.font = "600 13px 'JetBrains Mono', ui-monospace, monospace";
-            ctx.fillStyle = this.turn === PLAYER ? "#4ade80" : "#f43f5e";
-            ctx.fillText(this.turn === PLAYER ? "YOUR TURN" : "AI THINKING…", this.width - pad, pad);
+            if (this.state === State.PLAYING) {
+                ctx.textAlign = "right";
+                ctx.font = "600 13px 'JetBrains Mono', ui-monospace, monospace";
+                const isMyTurn = this.turn === this.myRole;
+                ctx.fillStyle = isMyTurn ? "#4ade80" : "#f43f5e";
+                ctx.fillText(isMyTurn ? "YOUR TURN" : "OPPONENT'S TURN", this.width - pad, pad);
+            }
+        } else {
+            ctx.fillText(`WIN STREAK ${this.winStreak}`, pad, pad);
+            ctx.font = "500 12px 'JetBrains Mono', ui-monospace, monospace";
+            ctx.fillStyle = "#94a3b8";
+            ctx.fillText(`BEST ${this.bestStreak} · ${this.rules.label.toUpperCase()}`, pad, pad + 22);
+
+            if (this.state === State.PLAYING) {
+                ctx.textAlign = "right";
+                ctx.font = "600 13px 'JetBrains Mono', ui-monospace, monospace";
+                ctx.fillStyle = this.turn === PLAYER ? "#4ade80" : "#f43f5e";
+                ctx.fillText(this.turn === PLAYER ? "YOUR TURN" : "AI THINKING…", this.width - pad, pad);
+            }
         }
     }
     //</editor-fold>
