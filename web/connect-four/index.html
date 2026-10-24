@@ -3,13 +3,13 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>Neon Connect Four — a game built on the 2D Java Game Framework</title>
-    <meta name="description" content="Neon Connect Four is a player-versus-AI strategy game running on a browser port of the 2D Java Game Framework. Play it in your browser, no install required.">
+    <title>Neon Connect Four - a game built on the 2D Java Game Framework</title>
+    <meta name="description" content="Neon Connect Four is a player-versus-AI and 2-player online strategy game running on a browser port of the 2D Java Game Framework. Play it in your browser, no install required.">
     <meta name="theme-color" content="#070b14">
 
     <meta property="og:type" content="website">
     <meta property="og:title" content="Neon Connect Four">
-    <meta property="og:description" content="A player-versus-AI strategy game running on a browser port of the 2D Java Game Framework.">
+    <meta property="og:description" content="A strategy game running on a browser port of the 2D Java Game Framework with local AI and 2-player online play.">
 
     <link rel="icon" href="../favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="../styles.css">
@@ -22,7 +22,7 @@
             <span class="logo" aria-hidden="true"></span>
             <div>
                 <h1>Neon Connect Four</h1>
-                <p>Player versus a minimax AI, on a browser port of the 2D Java Game Framework.</p>
+                <p>Player versus minimax AI or 2-player online, on a browser port of the 2D Java Game Framework.</p>
             </div>
         </div>
         <nav class="masthead__links">
@@ -49,7 +49,10 @@
                             <button class="mode-pill" data-mode="standard" aria-pressed="true">Standard</button>
                             <button class="mode-pill" data-mode="expert" aria-pressed="false">Expert</button>
                         </div>
-                        <button class="button button--primary" data-action="start">Play</button>
+                        <div class="panel__actions">
+                            <button class="button button--primary" data-action="start">Play AI</button>
+                            <button class="button button--secondary" data-action="online">Play online</button>
+                        </div>
                         <dl class="panel__stats">
                             <div><dt>Best streak</dt><dd data-field="highscore">0</dd></div>
                             <div><dt>Controls</dt><dd class="panel__hint">Click a column</dd></div>
@@ -61,10 +64,13 @@
                     <div class="panel">
                         <p class="panel__eyebrow" data-field="result-label">Game over</p>
                         <h2 data-field="final-score">0</h2>
-                        <p class="panel__lead">
+                        <p class="panel__lead" data-field="gameover-lead">
                             Win streak. Best <span data-field="final-best">0</span>.
                         </p>
-                        <button class="button button--primary" data-action="restart">Play again</button>
+                        <div class="panel__actions">
+                            <button class="button button--primary" data-action="restart">Play again</button>
+                            <button class="button button--ghost" data-action="leave-online" data-field="leave-online-btn" hidden>Leave room</button>
+                        </div>
                     </div>
                 </div>
 
@@ -88,9 +94,9 @@
                 <article class="card">
                     <h3>Desktop</h3>
                     <ul class="keys">
-                        <li><span class="key-word">Mouse</span> — hover a column, click to drop</li>
-                        <li><kbd>A</kbd><kbd>D</kbd> or arrows — move the column marker</li>
-                        <li><kbd>Space</kbd> or <kbd>Enter</kbd> — drop your disc</li>
+                        <li><span class="key-word">Mouse</span> - hover a column, click to drop</li>
+                        <li><kbd>A</kbd><kbd>D</kbd> or arrows - move the column marker</li>
+                        <li><kbd>Space</kbd> or <kbd>Enter</kbd> - drop your disc</li>
                     </ul>
                 </article>
                 <article class="card">
@@ -101,11 +107,11 @@
                     </ul>
                 </article>
                 <article class="card">
-                    <h3>Scoring</h3>
+                    <h3>Online Play</h3>
                     <ul class="keys">
-                        <li>Connect four discs — horizontal, vertical or diagonal — to win</li>
-                        <li>Win streak counts consecutive match wins against the AI</li>
-                        <li>The AI plays a full board search, not a random spread</li>
+                        <li>Click <span class="key-word">Play online</span> on the menu</li>
+                        <li>Host creates a room and shares the 6-character code or link</li>
+                        <li>Guest enters the code and joins the match directly</li>
                     </ul>
                 </article>
             </div>

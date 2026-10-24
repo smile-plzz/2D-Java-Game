@@ -5,20 +5,20 @@ A collection of classes used for 2d game programming in Java. Much of the dirty 
 ## Play it in the browser
 
 `web/` holds a small arcade of six games, plus a browser port of this framework's
-core that they are all written against. It is a static site — no build step, no
+core that they are all written against. It is a static site: no build step, no
 dependencies, no server code.
 
 | Game | Modes |
 | --- | --- |
-| **Vector Arena** — wave survival shooter | Survival · Time Attack · Zen |
-| **Neon Snake** — grid arcade | Classic · Wrap · Maze |
-| **Brick Breaker** — paddle arcade | Classic · Blitz · Endless |
-| **Neon Pong** — head to head | Classic · Blitz · Multiball |
-| **Neon 2048** — sliding puzzle | Compact 3×3 · Classic 4×4 · Grand 5×5 |
-| **Connect Four** — minimax AI | Casual · Standard · Expert |
+| **Vector Arena** - wave survival shooter | Survival · Time Attack · Zen |
+| **Neon Snake** - grid arcade | Classic · Wrap · Maze |
+| **Brick Breaker** - paddle arcade | Classic · Blitz · Endless |
+| **Neon Pong** - head to head | Classic · Blitz · Multiball · Online 2-Player |
+| **Neon 2048** - sliding puzzle | Compact 3×3 · Classic 4×4 · Grand 5×5 |
+| **Connect Four** - minimax AI | Casual · Standard · Expert · Online 2-Player |
 
 Each mode keeps its own high score. A mode is one entry in that game's
-`MODE_INFO` table — the tuning it changes and the menu copy describing it live
+`MODE_INFO` table: the tuning it changes and the menu copy describing it live
 side by side, so adding another is a single object rather than a branch through
 the update loop.
 
@@ -38,8 +38,8 @@ refuse to load over that scheme.
 import is zero configuration:
 
 1. Push this repository to GitHub.
-2. On [vercel.com](https://vercel.com), **Add New → Project** and import the repo.
-3. Leave every build setting empty — framework preset **Other**, no build
+2. On [vercel.com](https://vercel.com), **Add New -> Project** and import the repo.
+3. Leave every build setting empty: framework preset **Other**, no build
    command, no install command. `vercel.json` supplies the output directory.
 4. **Deploy.**
 
@@ -52,7 +52,29 @@ vercel --prod # production deployment
 ```
 
 If you would rather not use `vercel.json`, delete it and set **Root Directory**
-to `web` in the project settings instead — the two approaches are equivalent.
+to `web` in the project settings instead: the two approaches are equivalent.
+
+### Online play
+
+Connect Four and Neon Pong feature peer-to-peer 2-player online multiplayer via WebRTC data channels. No server, accounts, or registration required.
+
+#### How to host
+1. On Connect Four or Neon Pong, click **Play online** from the start menu.
+2. Click **Create Room**. A 6-character room code will be generated (e.g. `K9X2MW`).
+3. Click **Copy Code** or **Copy Link** to share the room code or direct link with your friend.
+4. Keep the tab open and in the foreground. Once your opponent connects, the match begins automatically.
+
+#### How to join
+1. Click **Play online** from the game menu, then **Join Room** (or open the shared link).
+2. Enter the 6-character room code.
+3. Click **Join Match**.
+
+#### Networking and TURN relays
+- **Direct P2P**: Game traffic flows directly between the two browsers over WebRTC data channels. Initial connection handshakes are brokered by PeerJS's public cloud.
+- **NAT Traversal (STUN/TURN)**: Google public STUN servers are used by default. On restrictive corporate firewalls or carrier-grade NATs (common on cellular data networks), direct peer-to-peer connections may fail without a relay.
+- **Custom TURN configuration**: If a TURN relay is needed, free credentials can be obtained from providers like the [Open Relay Project (Metered)](https://www.metered.ca/tools/openrelay/). Credentials can be supplied without editing code via `window.ARCADE_TURN_CONFIG = [{ urls: 'turn:...', username: '...', credential: '...' }]` or stored in `localStorage` under `arcade_turn_ice`.
+- **Foreground tab requirement**: In real-time games like Neon Pong, modern browsers throttle background tabs to save battery. The host's tab must remain open and in the foreground during gameplay so the simulation update loop remains constant.
+- **Pause behavior**: During online multiplayer matches, pause is disabled to maintain continuous synchronization between both players.
 
 ### Controls
 
@@ -62,7 +84,7 @@ to `web` in the project settings instead — the two approaches are equivalent.
 | Aim | Mouse | Right half of the screen |
 | Fire | Left click or `Space` | Hold the right stick |
 | Dash | `Shift` | Double tap the left half |
-| Pause | `P` or `Esc` | — |
+| Pause | `P` or `Esc` (single-player) | - |
 | Mute | `M` | Sound button |
 
 The other games use the same conventions: `WASD` or the arrows to move, `P` or
@@ -85,7 +107,7 @@ the two versions read the same.
 | `game.input.Keyboard` / `Mouse` | `framework/input.js` | `keyDown` / `keyDownOnce` polling over DOM events |
 | `game.animation.ease.*` | `framework/ease.js` | All eleven easing families, original `(time, begin, change, duration)` signature |
 
-Two modules have no Java counterpart — they exist because a browser canvas has
+Two modules have no Java counterpart: they exist because a browser canvas has
 problems a desktop JVM window does not:
 
 | Browser | What it does |
@@ -97,7 +119,7 @@ Vector Arena lives in `web/js/game/`: `arena.js` (loop, waves, HUD),
 `entities.js` (player, enemies, pickups), `particles.js`, `audio.js` (synthesised
 with the Web Audio API, so there are no audio assets), and `touch.js`. The other
 five games are in `web/js/games/`, one module each plus `shell.js`, which wires
-the DOM chrome — overlays, score readouts, mode pills and buttons — that every
+the DOM chrome: overlays, score readouts, mode pills and buttons: that every
 page shares.
 
 ### Performance
@@ -110,7 +132,7 @@ desktop. What that costs, and what it bought:
   list, so a free slot is a stack pop instead of a scan. Drawing sorts them into
   buckets sharing a colour, a quantised alpha and a quantised line width, and
   strokes each bucket as one path. Measured in headless Chromium at a saturated
-  1000 particle pool: **6.1ms → 0.18ms per frame**, most of a frame budget back.
+  1000 particle pool: **6.1ms -> 0.18ms per frame**, most of a frame budget back.
 - **The glow is the first thing to go.** `shadowBlur` behind every neon stroke is
   the single most expensive thing the canvas does per shape, so it is scaled by
   the quality level from one place and switched off entirely at the bottom.
@@ -125,7 +147,7 @@ desktop. What that costs, and what it bought:
   read on every pointer move.
 
 Not ported: `Matrix`, `Matrix3`, `Quaternion`, `Vector3`, `Vector4`, the Swing
-GUI toolkit under `game.gui`, and `Texture2D` / `ImageHelper` — none of which the
+GUI toolkit under `game.gui`, and `Texture2D` / `ImageHelper`: none of which the
 game needed.
 
 ## Installation (Java framework)
