@@ -36,3 +36,11 @@
   - Normalized coordinates ensure resolution and aspect-ratio independence across mobile and desktop displays.
   - Pause disabled during live online matches to guarantee synchronization.
 - Created and verified unit test suite `tests/unit/pong_net.test.js`.
+
+## 2026-10-24 17:58 - Milestone 4: Two-Context E2E Testing and Documentation
+- Built automated two-context Playwright integration tests in `tests/e2e/`:
+  - `connectfour_two_context.test.js`: launches two Chromium browser contexts on local server, creates room, connects guest via `?room=CODE`, plays turns over WebRTC, verifies mutual game completion and result agreement.
+  - `pong_two_context.test.js`: launches two Chromium contexts, verifies live snapshot generation, client interpolation, real-time paddle updates, and graceful disconnection.
+- Updated `README.md` with "Online play" section documenting hosting, joining, TURN configuration, foreground tab requirements, and pause behavior.
+- Cleaned and confirmed zero em-dashes in any user-facing text.
+- Verified test runner: all unit tests and e2e integration tests pass (`npm test`).
