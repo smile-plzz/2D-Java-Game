@@ -553,3 +553,136 @@ code {
     .masthead p { display: none; }
     .stage__frame { height: 82vh; }
 }
+
+
+/* Multiplayer Lobby and Net HUD ------------------------------------------- */
+
+.overlay--lobby {
+    z-index: 10;
+}
+
+.panel--lobby {
+    width: min(440px, 94%);
+}
+
+.panel__actions--vertical {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+}
+
+.button--secondary {
+    background: linear-gradient(180deg, rgba(56, 189, 248, 0.2), rgba(56, 189, 248, 0.08));
+    border-color: rgba(56, 189, 248, 0.45);
+    color: #e0f2fe;
+}
+.button--secondary:hover {
+    border-color: var(--accent-2);
+}
+
+.button--ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-dim);
+}
+.button--ghost:hover {
+    color: var(--text);
+    background: rgba(148, 163, 184, 0.08);
+}
+
+.lobby-code-display {
+    font-size: clamp(2rem, 7vw, 2.8rem) !important;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+    text-shadow: 0 0 16px rgba(74, 222, 128, 0.4);
+    margin: 0.3rem 0 0.6rem !important;
+    font-family: var(--mono);
+}
+
+.lobby-code-actions {
+    display: flex;
+    justify-content: center;
+    gap: 0.65rem;
+    margin: 1rem 0;
+}
+
+.lobby-help-text {
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    margin: 0.6rem auto 1.2rem;
+    max-width: 38ch;
+}
+
+.lobby-join-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    margin-top: 0.5rem;
+}
+
+.lobby-input {
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 1.5rem;
+    letter-spacing: 0.25em;
+    text-align: center;
+    text-transform: uppercase;
+    color: var(--text);
+    background: rgba(13, 20, 36, 0.85);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 0.65rem 0.8rem;
+    outline: none;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.lobby-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 12px rgba(74, 222, 128, 0.25);
+}
+
+.lobby-error {
+    font-size: 0.8rem;
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.28);
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+    margin: 0.4rem 0;
+}
+
+.lobby-status {
+    font-size: 0.82rem;
+    color: var(--accent-2);
+    margin: 0.4rem 0;
+}
+
+.net-hud-badge {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--text);
+    background: rgba(13, 20, 36, 0.85);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.28rem 0.7rem;
+    backdrop-filter: blur(6px);
+    z-index: 4;
+    pointer-events: none;
+}
+
+.net-hud-badge[hidden] {
+    display: none;
+}
+
+.net-hud-badge__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+}
